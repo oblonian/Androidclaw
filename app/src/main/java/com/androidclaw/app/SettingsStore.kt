@@ -89,6 +89,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_ANTHROPIC_PKCE_STATE, null)
         set(value) = prefs.edit { putString(KEY_ANTHROPIC_PKCE_STATE, value) }
 
+    /** Step-through mode: confirm each device action one at a time. On by default. */
+    var stepThrough: Boolean
+        get() = prefs.getString(KEY_STEP_THROUGH, "true").toBoolean()
+        set(value) = prefs.edit { putString(KEY_STEP_THROUGH, value.toString()) }
+
     val isConfigured: Boolean
         get() = when (backend) {
             LlmBackend.ANTHROPIC -> anthropicKey != null || anthropicOAuthToken != null
@@ -108,6 +113,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ANTHROPIC_OAUTH_EXPIRY = "anthropic_oauth_expiry"
         private const val KEY_ANTHROPIC_PKCE_VERIFIER = "anthropic_pkce_verifier"
         private const val KEY_ANTHROPIC_PKCE_STATE = "anthropic_pkce_state"
+        private const val KEY_STEP_THROUGH = "step_through"
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
         const val DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6"
     }

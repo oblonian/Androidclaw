@@ -24,6 +24,14 @@ fun interface OverlayAgent {
     fun runTurn(userText: String): Flow<OverlayReply>
 }
 
+/** The user's verdict on a proposed device action, surfaced in the overlay. */
+sealed interface OverlayDecision {
+    data object Proceed : OverlayDecision
+    data object Back : OverlayDecision
+    data object Stop : OverlayDecision
+    data class Chat(val note: String) : OverlayDecision
+}
+
 /**
  * Process-wide injection point. ClawApp sets [agent] on startup; the
  * foreground service reads it when the user sends a message. Null until
@@ -32,4 +40,13 @@ fun interface OverlayAgent {
 object OverlayBridge {
     @Volatile
     var agent: OverlayAgent? = null
+
+    /**
+     * Set by the overlay service while it is showing. The agent's confirmer
+     * calls this to ask the user to step a device action through; it suspends
+     * until a button (or a typed note) resolves it. Null when the overlay is
+     * not visible — callers should proceed automatically in that case.
+     */
+    @Volatile
+    var confirmHandler: (suspend (String) -> OverlayDecision)? = null
 }

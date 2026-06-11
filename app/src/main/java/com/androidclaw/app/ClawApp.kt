@@ -5,6 +5,7 @@ import android.content.Context
 import com.androidclaw.control.OpenAppTool
 import com.androidclaw.control.ReadScreenTool
 import com.androidclaw.control.UiActionTool
+import com.androidclaw.gateway.Confirmer
 import com.androidclaw.gateway.Gateway
 import com.androidclaw.llm.LlmProvider
 import com.androidclaw.llm.anthropic.AnthropicProvider
@@ -47,8 +48,12 @@ class AppContainer(context: Context) {
         register(UiActionTool())
     }
 
-    /** Built per turn so settings changes apply immediately. Null until configured. */
-    fun gateway(): Gateway? {
+    /**
+     * Built per turn so settings changes apply immediately. Null until configured.
+     * [confirmer] gates CONFIRM-tier actions; defaults to auto-approve unless the
+     * caller (a UI) supplies a step-through confirmer.
+     */
+    fun gateway(confirmer: Confirmer = Confirmer.AutoApprove): Gateway? {
         val provider: LlmProvider = when (settings.backend) {
             LlmBackend.ANTHROPIC -> when {
                 settings.anthropicUseOAuth && settings.anthropicOAuthToken != null ->
@@ -77,7 +82,7 @@ class AppContainer(context: Context) {
                 )
             }
         } ?: return null
-        return Gateway(provider, tools, SYSTEM_PROMPT)
+        return Gateway(provider, tools, SYSTEM_PROMPT, confirmer = confirmer)
     }
 
     companion object {

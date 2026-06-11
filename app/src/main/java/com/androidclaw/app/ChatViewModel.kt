@@ -6,9 +6,14 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.androidclaw.gateway.AgentEvent
+import com.androidclaw.gateway.ConfirmDecision
+import com.androidclaw.gateway.Confirmer
 import com.androidclaw.llm.ChatMessage
+import com.androidclaw.llm.ToolCall
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonPrimitive
 
 /** One visual entry in the chat list. */
 sealed interface ChatItem {
@@ -27,9 +32,26 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     var needsAuth by mutableStateOf(!container.settings.isConfigured)
         private set
 
+    /** Non-null while a device action is awaiting the user's step-through verdict. */
+    var pendingStep by mutableStateOf<String?>(null)
+        private set
+
     /** Wire-format history owned here; the gateway is stateless (SPEC §4). */
     private var conversation: List<ChatMessage> = emptyList()
     private var turnJob: Job? = null
+    private var pendingDecision: CompletableDeferred<ConfirmDecision>? = null
+
+    /** Gates each CONFIRM-tier action through the UI when step-through is on. */
+    private val confirmer = Confirmer { call ->
+        if (!container.settings.stepThrough) return@Confirmer ConfirmDecision.Proceed
+        val deferred = CompletableDeferred<ConfirmDecision>()
+        pendingDecision = deferred
+        pendingStep = describe(call)
+        val decision = deferred.await()
+        pendingStep = null
+        pendingDecision = null
+        decision
+    }
 
     fun refreshAuthState() {
         needsAuth = !container.settings.isConfigured
@@ -42,7 +64,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     fun send(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || busy) return
-        val gateway = container.gateway() ?: run {
+        val gateway = container.gateway(confirmer) ?: run {
             needsAuth = true
             return
         }
@@ -79,9 +101,43 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    // ── Step-through controls (the "game controller") ─────────────────────────
+
+    fun stepForward() { resolveStep(ConfirmDecision.Proceed) }
+    fun stepBack() { resolveStep(ConfirmDecision.Back) }
+    fun stepChat(note: String) {
+        if (note.isNotBlank()) resolveStep(ConfirmDecision.Chat(note.trim()))
+    }
+    fun stepStop() { resolveStep(ConfirmDecision.Cancel) }
+
+    private fun resolveStep(decision: ConfirmDecision) {
+        pendingDecision?.complete(decision)
+    }
+
+    private fun describe(call: ToolCall): String {
+        fun arg(key: String) = call.input[key]?.let {
+            runCatching { it.jsonPrimitive.content }.getOrNull()
+        }?.takeIf { it.isNotBlank() }
+        return when (call.name) {
+            "ui_action" -> when (arg("action")) {
+                "tap" -> "Tap “${arg("target") ?: "?"}”"
+                "type" -> "Type “${arg("text") ?: ""}”" + (arg("target")?.let { " into “$it”" } ?: "")
+                "scroll" -> "Scroll ${arg("direction") ?: "down"}"
+                "back" -> "Press Back"
+                "home" -> "Go Home"
+                "recents" -> "Open Recents"
+                else -> "Do ${arg("action") ?: "action"}"
+            }
+            else -> call.name + (arg("app")?.let { " “$it”" } ?: "")
+        }
+    }
+
     fun cancelTurn() {
+        resolveStep(ConfirmDecision.Cancel)
         turnJob?.cancel()
         turnJob = null
+        pendingStep = null
+        pendingDecision = null
         finishStreamingBubble()
         busy = false
     }

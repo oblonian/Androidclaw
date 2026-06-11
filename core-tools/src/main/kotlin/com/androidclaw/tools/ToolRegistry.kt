@@ -14,6 +14,9 @@ class ToolRegistry {
         .filter { it.tier != PermissionTier.BLOCKED }
         .map { it.schema }
 
+    /** Permission tier of a registered tool, or null if unknown. */
+    fun tierOf(name: String): PermissionTier? = tools[name]?.tier
+
     suspend fun execute(call: ToolCall): ToolResult {
         val tool = tools[call.name]
             ?: return ToolResult.error("Unknown tool: ${call.name}")

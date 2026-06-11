@@ -25,6 +25,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -61,12 +63,17 @@ class OverlayService : Service() {
     private val transcript = StringBuilder()
     private var assistantLineStart = -1 // index in `transcript` of the in-flight reply
 
+    // Step-through confirmation state.
+    private var pendingConfirmText: String? = null
+    private var pendingConfirm: CompletableDeferred<OverlayDecision>? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         startInForeground()
+        OverlayBridge.confirmHandler = ::handleConfirm
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,11 +88,36 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        OverlayBridge.confirmHandler = null
+        pendingConfirm?.complete(OverlayDecision.Stop)
         turnJob?.cancel()
         scope.cancel()
         rootView?.let { runCatching { windowManager.removeView(it) } }
         rootView = null
         super.onDestroy()
+    }
+
+    // ── Step-through confirmation ─────────────────────────────────────────────
+
+    /** Called off the main thread by the agent's confirmer; suspends until resolved. */
+    private suspend fun handleConfirm(description: String): OverlayDecision {
+        val deferred = CompletableDeferred<OverlayDecision>()
+        withContext(Dispatchers.Main.immediate) {
+            pendingConfirmText = description
+            pendingConfirm = deferred
+            showExpanded() // rebuild card to show the confirm controls
+        }
+        val decision = deferred.await()
+        withContext(Dispatchers.Main.immediate) {
+            pendingConfirmText = null
+            pendingConfirm = null
+            showExpanded()
+        }
+        return decision
+    }
+
+    private fun resolveConfirm(decision: OverlayDecision) {
+        pendingConfirm?.complete(decision)
     }
 
     // ── Foreground plumbing ───────────────────────────────────────────────────
@@ -219,13 +251,45 @@ class OverlayService : Service() {
         scrollView = scroll
         card.addView(scroll)
 
-        // Input row.
+        // Step-through confirmation controls (shown only while an action is pending).
+        val pending = pendingConfirmText
+        if (pending != null) {
+            card.addView(TextView(this).apply {
+                text = "Claw wants to: $pending"
+                textSize = 13f
+                setTextColor(Color.parseColor("#8A4B00"))
+                setPadding(0, dp(4), 0, dp(6))
+            })
+            val controls = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            controls.addView(Button(this).apply {
+                text = "▶ Do"
+                setOnClickListener { resolveConfirm(OverlayDecision.Proceed) }
+            })
+            controls.addView(Button(this).apply {
+                text = "◀ Back"
+                setOnClickListener { resolveConfirm(OverlayDecision.Back) }
+            })
+            controls.addView(Button(this).apply {
+                text = "Stop"
+                setOnClickListener { resolveConfirm(OverlayDecision.Stop) }
+            })
+            card.addView(controls)
+        }
+
+        // Input row. While a confirm is pending, typing + send becomes a "chat" note.
         val inputRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val input = EditText(this).apply {
-            hint = if (OverlayBridge.agent == null) "Set up Claw in the app first" else "Message…"
+            hint = when {
+                OverlayBridge.agent == null -> "Set up Claw in the app first"
+                pending != null -> "Or tell Claw what to do instead…"
+                else -> "Message…"
+            }
             textSize = 13f
             isEnabled = OverlayBridge.agent != null
             maxLines = 3
@@ -237,7 +301,8 @@ class OverlayService : Service() {
             val text = input.text?.toString()?.trim().orEmpty()
             if (text.isNotEmpty()) {
                 input.setText("")
-                send(text)
+                if (pendingConfirmText != null) resolveConfirm(OverlayDecision.Chat(text))
+                else send(text)
             }
         }
         input.setOnEditorActionListener { _, actionId, _ ->

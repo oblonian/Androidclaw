@@ -9,7 +9,9 @@ import com.androidclaw.llm.LlmRequest
 import com.androidclaw.llm.Role
 import com.androidclaw.llm.StopReason
 import com.androidclaw.llm.ToolCall
+import com.androidclaw.tools.PermissionTier
 import com.androidclaw.tools.ToolRegistry
+import com.androidclaw.tools.ToolResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -24,6 +26,7 @@ class Gateway(
     private val tools: ToolRegistry,
     private val systemPrompt: String,
     private val maxIterations: Int = 8,
+    private val confirmer: Confirmer = Confirmer.AutoApprove,
 ) {
 
     /** Runs one user turn. [history] must already end with the new user message. */
@@ -59,11 +62,42 @@ class Gateway(
                 return@flow
             }
 
-            val results = toolCalls.map { call ->
-                emit(AgentEvent.ToolStarted(call))
-                val result = tools.execute(call)
-                emit(AgentEvent.ToolFinished(call, result))
-                ContentBlock.ToolResult(call.id, result.content, result.isError)
+            val results = mutableListOf<ContentBlock.ToolResult>()
+            for ((index, call) in toolCalls.withIndex()) {
+                // Gate CONFIRM-tier actions through the user (step-through control).
+                val decision = if (tools.tierOf(call.name) == PermissionTier.CONFIRM) {
+                    confirmer.confirm(call)
+                } else {
+                    ConfirmDecision.Proceed
+                }
+
+                if (decision is ConfirmDecision.Cancel) {
+                    // Answer every outstanding tool_use so the history stays valid,
+                    // then end the turn.
+                    toolCalls.drop(index).forEach {
+                        results += ContentBlock.ToolResult(it.id, "Cancelled by user.", isError = false)
+                    }
+                    messages += ChatMessage(Role.USER, results)
+                    emit(AgentEvent.TurnComplete(messages))
+                    return@flow
+                }
+
+                val result = when (decision) {
+                    ConfirmDecision.Proceed -> {
+                        emit(AgentEvent.ToolStarted(call))
+                        tools.execute(call).also { emit(AgentEvent.ToolFinished(call, it)) }
+                    }
+                    ConfirmDecision.Back -> ToolResult(
+                        "User stepped back — do NOT take this action. Reconsider the previous " +
+                            "step or ask the user what to do instead.",
+                    )
+                    is ConfirmDecision.Chat -> ToolResult(
+                        "User did not approve that action and said: \"${decision.note}\". " +
+                            "Adjust your plan accordingly; do not take the proposed action.",
+                    )
+                    ConfirmDecision.Cancel -> error("handled above")
+                }
+                results += ContentBlock.ToolResult(call.id, result.content, result.isError)
             }
             messages += ChatMessage(Role.USER, results)
         }

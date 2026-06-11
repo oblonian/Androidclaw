@@ -18,8 +18,9 @@ See [SPEC.md](SPEC.md) for the full technical specification.
 - ✅ Tools: `web_fetch`, `open_app`, `read_screen`, `ui_action`
 - ✅ **Floating "Claw" overlay** — draggable edge-tab over other apps (`core-overlay`)
 - ✅ **AccessibilityService actuator** — reads the screen and taps/types/scrolls in other apps (`core-control`)
+- ✅ **Step-through confirmations** — approve each device action forward / back / chat / stop (in-app + overlay)
 - ✅ Credentials stored via Android Keystore (EncryptedSharedPreferences)
-- ⏳ P1 remaining: App Recipe engine, confirmation cards for `CONFIRM`-tier actions, audit log
+- ⏳ P1 remaining: App Recipe engine, audit log
 
 ## Modules
 

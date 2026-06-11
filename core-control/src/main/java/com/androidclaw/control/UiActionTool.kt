@@ -17,13 +17,15 @@ import kotlinx.serialization.json.put
  * Drives the foreground app: tap, type, scroll, or navigate (back/home/recents),
  * via the AccessibilityService (SPEC §5.1).
  *
- * Tier is AUTO for now so the flow works end-to-end; once confirmation cards
- * (SPEC §6/§12) land, this moves to CONFIRM so actions in other apps are
- * approved before they run.
+ * CONFIRM tier: the Gateway routes each call through the user's step-through
+ * control before it runs, so actions in other apps are approved (or redirected)
+ * one at a time (SPEC §6/§12).
  */
 class UiActionTool : Tool {
 
-    override val tier = PermissionTier.AUTO
+    // Acting inside other apps is gated: the user steps each action through
+    // (forward / back / chat / stop). The app supplies the confirmer.
+    override val tier = PermissionTier.CONFIRM
 
     override val schema = ToolSchema(
         name = "ui_action",

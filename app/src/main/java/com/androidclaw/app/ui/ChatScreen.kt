@@ -23,8 +23,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -99,6 +102,16 @@ fun ChatScreen(
                 items(vm.items) { item -> ChatBubble(item) }
             }
 
+            vm.pendingStep?.let { step ->
+                StepBar(
+                    action = step,
+                    onForward = { vm.stepForward() },
+                    onBack = { vm.stepBack() },
+                    onChat = { vm.stepChat(it) },
+                    onStop = { vm.stepStop() },
+                )
+            }
+
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -108,7 +121,7 @@ fun ChatScreen(
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text(if (vm.needsAuth) "Sign in or set an API key first" else "Ask AndroidClaw…") },
-                    enabled = !vm.needsAuth,
+                    enabled = !vm.needsAuth && vm.pendingStep == null,
                     maxLines = 4,
                 )
                 if (vm.busy) {
@@ -179,6 +192,60 @@ private fun ChatBubble(item: ChatItem) {
     }
 }
 
+/** The step-through "game controller": forward / back / chat / stop. */
+@Composable
+private fun StepBar(
+    action: String,
+    onForward: () -> Unit,
+    onBack: () -> Unit,
+    onChat: (String) -> Unit,
+    onStop: () -> Unit,
+) {
+    var chatMode by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf("") }
+
+    Surface(
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "Claw wants to: $action",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            if (chatMode) {
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Tell Claw what to do instead…") },
+                    maxLines = 3,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { chatMode = false }) { Text("Cancel") }
+                    Button(
+                        onClick = { onChat(note); note = ""; chatMode = false },
+                        enabled = note.isNotBlank(),
+                    ) { Text("Send") }
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(onClick = onForward) { Text("▶ Do it") }
+                    OutlinedButton(onClick = onBack) { Text("◀ Back") }
+                    TextButton(onClick = { chatMode = true }) { Text("Chat") }
+                    TextButton(onClick = onStop) { Text("Stop") }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun Bubble(text: String, alignEnd: Boolean, container: androidx.compose.ui.graphics.Color) {
     Box(Modifier.fillMaxWidth(), contentAlignment = if (alignEnd) Alignment.CenterEnd else Alignment.CenterStart) {
@@ -207,6 +274,7 @@ private fun SettingsDialog(
     var anthropicKey by remember { mutableStateOf(settings.anthropicKey.orEmpty()) }
     var anthropicModel by remember { mutableStateOf(settings.anthropicModel) }
     var openRouterModel by remember { mutableStateOf(settings.openRouterModel) }
+    var stepThrough by remember { mutableStateOf(settings.stepThrough) }
     val openRouterConnected = settings.openRouterKey != null
 
     // Anthropic OAuth sub-section
@@ -222,6 +290,7 @@ private fun SettingsDialog(
         settings.anthropicModel = anthropicModel
         settings.openRouterModel = openRouterModel
         settings.anthropicUseOAuth = anthropicUseOAuth
+        settings.stepThrough = stepThrough
     }
 
     AlertDialog(
@@ -347,6 +416,18 @@ private fun SettingsDialog(
                 )
                 TextButton(onClick = onOpenAccessibility) {
                     Text(if (screenControlOn) "Open Accessibility settings" else "Enable screen control")
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Step-through mode", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Approve each action in another app one at a time",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                    Switch(checked = stepThrough, onCheckedChange = { stepThrough = it })
                 }
 
                 Text(
