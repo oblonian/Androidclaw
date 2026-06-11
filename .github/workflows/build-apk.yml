@@ -5,6 +5,9 @@ on:
     branches: ["claude/**", main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,3 +33,12 @@ jobs:
           name: androidclaw-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+
+      - name: Publish APK to rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create latest --prerelease \
+            --title "AndroidClaw latest debug build" \
+            --notes "Rolling debug build from CI. Install on Android 10+." || true
+          gh release upload latest app/build/outputs/apk/debug/app-debug.apk --clobber
