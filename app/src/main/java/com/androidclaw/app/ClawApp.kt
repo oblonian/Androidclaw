@@ -4,7 +4,9 @@ import android.app.Application
 import android.content.Context
 import com.androidclaw.control.OpenAppTool
 import com.androidclaw.gateway.Gateway
+import com.androidclaw.llm.LlmProvider
 import com.androidclaw.llm.anthropic.AnthropicProvider
+import com.androidclaw.llm.openai.OpenAiCompatProvider
 import com.androidclaw.tools.ToolRegistry
 import com.androidclaw.tools.WebFetchTool
 import okhttp3.OkHttpClient
@@ -28,7 +30,7 @@ class AppContainer(context: Context) {
 
     val settings = SettingsStore(context)
 
-    private val http = OkHttpClient.Builder()
+    val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS) // streaming responses stay open
         .build()
@@ -38,10 +40,24 @@ class AppContainer(context: Context) {
         register(OpenAppTool(context.applicationContext))
     }
 
-    /** Built per turn so settings changes apply immediately. Null until a key is set. */
+    /** Built per turn so settings changes apply immediately. Null until configured. */
     fun gateway(): Gateway? {
-        val apiKey = settings.apiKey ?: return null
-        val provider = AnthropicProvider(http, apiKey, settings.model)
+        val provider: LlmProvider = when (settings.backend) {
+            LlmBackend.ANTHROPIC -> settings.anthropicKey?.let {
+                AnthropicProvider(http, it, settings.anthropicModel)
+            }
+            LlmBackend.OPENROUTER -> settings.openRouterKey?.let {
+                OpenAiCompatProvider(
+                    client = http,
+                    apiKey = it,
+                    model = settings.openRouterModel,
+                    extraHeaders = mapOf(
+                        "HTTP-Referer" to "https://github.com/oblonian/Androidclaw",
+                        "X-Title" to "AndroidClaw",
+                    ),
+                )
+            }
+        } ?: return null
         return Gateway(provider, tools, SYSTEM_PROMPT)
     }
 

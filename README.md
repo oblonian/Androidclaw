@@ -11,9 +11,11 @@ See [SPEC.md](SPEC.md) for the full technical specification.
 - ✅ Compose chat UI with streaming responses
 - ✅ Bounded ReAct agent loop (`core-gateway`)
 - ✅ Anthropic Messages API provider with tool use (`core-llm`)
+- ✅ OpenAI-compatible provider (OpenRouter, OpenAI, self-hosted gateways)
+- ✅ **OAuth sign-in via OpenRouter PKCE** — no manual API key needed
 - ✅ Tool registry with permission tiers (`core-tools`)
 - ✅ Tools: `web_fetch`, `open_app`
-- ✅ API key stored via Android Keystore (EncryptedSharedPreferences)
+- ✅ Credentials stored via Android Keystore (EncryptedSharedPreferences)
 - ⏳ P1: AccessibilityService actuator, screen reading, app recipes, confirmation cards
 
 ## Modules
@@ -38,9 +40,10 @@ Requires JDK 17+ and the Android SDK (API 35).
 ./gradlew :app:assembleDebug
 ```
 
-Install the APK, open the app, and paste your Anthropic API key in Settings
-(stored encrypted, never leaves the device). Default model:
-`claude-sonnet-4-6`.
+Install the APK, open the app, and either **sign in with OpenRouter** (OAuth,
+no key handling) or paste an Anthropic API key in Settings. Credentials are
+stored encrypted and never leave the device. Defaults: `claude-sonnet-4-6`
+(Anthropic) / `anthropic/claude-sonnet-4.6` (OpenRouter).
 
 ## Design constraints
 

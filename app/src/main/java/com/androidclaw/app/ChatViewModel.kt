@@ -24,22 +24,22 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var busy by mutableStateOf(false)
         private set
-    var needsApiKey by mutableStateOf(container.settings.apiKey == null)
+    var needsAuth by mutableStateOf(!container.settings.isConfigured)
         private set
 
     /** Wire-format history owned here; the gateway is stateless (SPEC §4). */
     private var conversation: List<ChatMessage> = emptyList()
     private var turnJob: Job? = null
 
-    fun refreshApiKeyState() {
-        needsApiKey = container.settings.apiKey == null
+    fun refreshAuthState() {
+        needsAuth = !container.settings.isConfigured
     }
 
     fun send(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || busy) return
         val gateway = container.gateway() ?: run {
-            needsApiKey = true
+            needsAuth = true
             return
         }
 

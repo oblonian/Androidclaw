@@ -39,14 +39,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.RadioButton
 import com.androidclaw.app.ChatItem
 import com.androidclaw.app.ChatViewModel
+import com.androidclaw.app.LlmBackend
 import com.androidclaw.app.SettingsStore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(vm: ChatViewModel, settings: SettingsStore) {
-    var showSettings by remember { mutableStateOf(vm.needsApiKey) }
+fun ChatScreen(
+    vm: ChatViewModel,
+    settings: SettingsStore,
+    onSignInOpenRouter: () -> Unit,
+) {
+    var showSettings by remember { mutableStateOf(vm.needsAuth) }
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -88,8 +94,8 @@ fun ChatScreen(vm: ChatViewModel, settings: SettingsStore) {
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (vm.needsApiKey) "Set your API key first" else "Ask AndroidClaw…") },
-                    enabled = !vm.needsApiKey,
+                    placeholder = { Text(if (vm.needsAuth) "Sign in or set an API key first" else "Ask AndroidClaw…") },
+                    enabled = !vm.needsAuth,
                     maxLines = 4,
                 )
                 if (vm.busy) {
@@ -100,7 +106,7 @@ fun ChatScreen(vm: ChatViewModel, settings: SettingsStore) {
                             vm.send(input)
                             input = ""
                         },
-                        enabled = input.isNotBlank() && !vm.needsApiKey,
+                        enabled = input.isNotBlank() && !vm.needsAuth,
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
                     }
@@ -112,9 +118,13 @@ fun ChatScreen(vm: ChatViewModel, settings: SettingsStore) {
     if (showSettings) {
         SettingsDialog(
             settings = settings,
+            onSignInOpenRouter = {
+                showSettings = false
+                onSignInOpenRouter()
+            },
             onDismiss = {
                 showSettings = false
-                vm.refreshApiKeyState()
+                vm.refreshAuthState()
             },
         )
     }
@@ -167,27 +177,71 @@ private fun Bubble(text: String, alignEnd: Boolean, container: androidx.compose.
 }
 
 @Composable
-private fun SettingsDialog(settings: SettingsStore, onDismiss: () -> Unit) {
-    var apiKey by remember { mutableStateOf(settings.apiKey.orEmpty()) }
-    var model by remember { mutableStateOf(settings.model) }
+private fun SettingsDialog(
+    settings: SettingsStore,
+    onSignInOpenRouter: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var backend by remember { mutableStateOf(settings.backend) }
+    var anthropicKey by remember { mutableStateOf(settings.anthropicKey.orEmpty()) }
+    var anthropicModel by remember { mutableStateOf(settings.anthropicModel) }
+    var openRouterModel by remember { mutableStateOf(settings.openRouterModel) }
+    val openRouterConnected = settings.openRouterKey != null
+
+    fun save() {
+        settings.backend = backend
+        settings.anthropicKey = anthropicKey
+        settings.anthropicModel = anthropicModel
+        settings.openRouterModel = openRouterModel
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Settings") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text("Anthropic API key") },
-                    singleLine = true,
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                BackendOption(
+                    label = "Anthropic API key",
+                    selected = backend == LlmBackend.ANTHROPIC,
+                    onSelect = { backend = LlmBackend.ANTHROPIC },
                 )
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    label = { Text("Model") },
-                    singleLine = true,
+                BackendOption(
+                    label = "OpenRouter (sign in)",
+                    selected = backend == LlmBackend.OPENROUTER,
+                    onSelect = { backend = LlmBackend.OPENROUTER },
                 )
+
+                if (backend == LlmBackend.ANTHROPIC) {
+                    OutlinedTextField(
+                        value = anthropicKey,
+                        onValueChange = { anthropicKey = it },
+                        label = { Text("Anthropic API key") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = anthropicModel,
+                        onValueChange = { anthropicModel = it },
+                        label = { Text("Model") },
+                        singleLine = true,
+                    )
+                } else {
+                    Text(
+                        if (openRouterConnected) "✓ Connected to OpenRouter" else "Not connected",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(onClick = {
+                        save()
+                        onSignInOpenRouter()
+                    }) {
+                        Text(if (openRouterConnected) "Sign in again" else "Sign in with OpenRouter")
+                    }
+                    OutlinedTextField(
+                        value = openRouterModel,
+                        onValueChange = { openRouterModel = it },
+                        label = { Text("Model") },
+                        singleLine = true,
+                    )
+                }
                 Text(
                     "Stored encrypted on this device only.",
                     style = MaterialTheme.typography.bodySmall,
@@ -197,8 +251,7 @@ private fun SettingsDialog(settings: SettingsStore, onDismiss: () -> Unit) {
         },
         confirmButton = {
             Button(onClick = {
-                settings.apiKey = apiKey
-                settings.model = model
+                save()
                 onDismiss()
             }) { Text("Save") }
         },
@@ -206,4 +259,12 @@ private fun SettingsDialog(settings: SettingsStore, onDismiss: () -> Unit) {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
+}
+
+@Composable
+private fun BackendOption(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected = selected, onClick = onSelect)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
 }
