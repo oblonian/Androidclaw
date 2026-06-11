@@ -7,11 +7,14 @@ import android.util.Base64
 import com.androidclaw.common.ClawJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.FormBody
+import kotlinx.serialization.json.put
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.security.MessageDigest
 import java.security.SecureRandom
 
@@ -37,7 +40,9 @@ object AnthropicAuth {
 
     fun launchSignIn(context: Context, settings: SettingsStore) {
         val verifier = randomVerifier()
+        val state = randomVerifier()
         settings.anthropicPkceVerifier = verifier
+        settings.anthropicPkceState = state
         val uri = Uri.parse(AUTH_URL).buildUpon()
             .appendQueryParameter("client_id", CLIENT_ID)
             .appendQueryParameter("response_type", "code")
@@ -45,6 +50,7 @@ object AnthropicAuth {
             .appendQueryParameter("scope", SCOPE)
             .appendQueryParameter("code_challenge", challengeFor(verifier))
             .appendQueryParameter("code_challenge_method", "S256")
+            .appendQueryParameter("state", state)
             .build()
         context.startActivity(Intent(Intent.ACTION_VIEW, uri))
     }
@@ -52,18 +58,25 @@ object AnthropicAuth {
     suspend fun exchangeCode(
         http: OkHttpClient,
         settings: SettingsStore,
-        code: String,
+        rawCode: String,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val verifier = settings.anthropicPkceVerifier
             ?: return@withContext Result.failure(Exception("No PKCE verifier — tap sign-in first"))
 
-        val body = FormBody.Builder()
-            .add("grant_type", "authorization_code")
-            .add("code", code.trim())
-            .add("client_id", CLIENT_ID)
-            .add("redirect_uri", REDIRECT_URI)
-            .add("code_verifier", verifier)
-            .build()
+        // The callback page shows the code as "code#state". Split if present;
+        // otherwise fall back to the stored state.
+        val trimmed = rawCode.trim()
+        val code = trimmed.substringBefore('#')
+        val state = trimmed.substringAfter('#', settings.anthropicPkceState.orEmpty())
+
+        val body = buildJsonObject {
+            put("grant_type", "authorization_code")
+            put("code", code)
+            put("state", state)
+            put("client_id", CLIENT_ID)
+            put("redirect_uri", REDIRECT_URI)
+            put("code_verifier", verifier)
+        }.toString().toRequestBody("application/json".toMediaType())
 
         val request = Request.Builder()
             .url(TOKEN_URL)
@@ -81,6 +94,7 @@ object AnthropicAuth {
                 val expiresIn = json["expires_in"]?.jsonPrimitive?.content?.toLongOrNull() ?: 3600L
                 settings.anthropicOAuthExpiry = System.currentTimeMillis() + expiresIn * 1_000L
                 settings.anthropicPkceVerifier = null
+                settings.anthropicPkceState = null
                 settings.anthropicUseOAuth = true
             }
         }

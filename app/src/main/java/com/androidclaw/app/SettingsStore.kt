@@ -84,6 +84,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_ANTHROPIC_PKCE_VERIFIER, null)
         set(value) = prefs.edit { putString(KEY_ANTHROPIC_PKCE_VERIFIER, value) }
 
+    /** OAuth state stashed across the Anthropic OAuth browser round-trip. */
+    var anthropicPkceState: String?
+        get() = prefs.getString(KEY_ANTHROPIC_PKCE_STATE, null)
+        set(value) = prefs.edit { putString(KEY_ANTHROPIC_PKCE_STATE, value) }
+
     val isConfigured: Boolean
         get() = when (backend) {
             LlmBackend.ANTHROPIC -> anthropicKey != null || anthropicOAuthToken != null
@@ -102,6 +107,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ANTHROPIC_OAUTH_REFRESH = "anthropic_oauth_refresh"
         private const val KEY_ANTHROPIC_OAUTH_EXPIRY = "anthropic_oauth_expiry"
         private const val KEY_ANTHROPIC_PKCE_VERIFIER = "anthropic_pkce_verifier"
+        private const val KEY_ANTHROPIC_PKCE_STATE = "anthropic_pkce_state"
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
         const val DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6"
     }
