@@ -106,11 +106,11 @@ object AnthropicAuth {
         if (expiry == 0L || System.currentTimeMillis() < expiry - 60_000L) return
         val refresh = settings.anthropicOAuthRefreshToken ?: return
         withContext(Dispatchers.IO) {
-            val body = FormBody.Builder()
-                .add("grant_type", "refresh_token")
-                .add("refresh_token", refresh)
-                .add("client_id", CLIENT_ID)
-                .build()
+            val body = buildJsonObject {
+                put("grant_type", "refresh_token")
+                put("refresh_token", refresh)
+                put("client_id", CLIENT_ID)
+            }.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder().url(TOKEN_URL).post(body).build()
             runCatching {
                 http.newCall(request).execute().use { response ->

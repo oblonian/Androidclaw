@@ -45,6 +45,7 @@ kotlin {
 dependencies {
     implementation(project(":core-gateway"))
     implementation(project(":core-control"))
+    implementation(project(":core-overlay"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

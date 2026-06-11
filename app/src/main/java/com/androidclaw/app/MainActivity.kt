@@ -1,12 +1,15 @@
 package com.androidclaw.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import com.androidclaw.overlay.OverlayService
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -34,6 +37,7 @@ class MainActivity : ComponentActivity() {
                     settings = container.settings,
                     onSignInOpenRouter = { OpenRouterAuth.launchSignIn(this, container.settings) },
                     onSignInAnthropic = { AnthropicAuth.launchSignIn(this, container.settings) },
+                    onToggleOverlay = { enableOverlay() },
                 )
             }
         }
@@ -42,6 +46,25 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleOAuthCallback(intent)
+    }
+
+    /**
+     * Launches the floating overlay (SPEC §5.4). Requests the "draw over other
+     * apps" grant first if it's missing — the user returns and taps again.
+     */
+    private fun enableOverlay() {
+        if (!OverlayService.canDraw(this)) {
+            Toast.makeText(this, "Grant \"Display over other apps\", then tap Float again", Toast.LENGTH_LONG).show()
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                ),
+            )
+            return
+        }
+        OverlayService.start(this)
+        Toast.makeText(this, "Claw is floating — check the screen edge", Toast.LENGTH_SHORT).show()
     }
 
     private fun handleOAuthCallback(intent: Intent?) {

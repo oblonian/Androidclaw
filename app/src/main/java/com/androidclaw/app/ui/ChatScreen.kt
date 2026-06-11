@@ -30,6 +30,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +57,7 @@ fun ChatScreen(
     settings: SettingsStore,
     onSignInOpenRouter: () -> Unit,
     onSignInAnthropic: () -> Unit,
+    onToggleOverlay: () -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(vm.needsAuth) }
     var input by remember { mutableStateOf("") }
@@ -70,6 +72,9 @@ fun ChatScreen(
             TopAppBar(
                 title = { Text("AndroidClaw") },
                 actions = {
+                    IconButton(onClick = onToggleOverlay) {
+                        Icon(Icons.Default.Face, contentDescription = "Float Claw overlay")
+                    }
                     IconButton(onClick = { vm.clearChat() }) {
                         Icon(Icons.Default.Clear, contentDescription = "Clear chat")
                     }

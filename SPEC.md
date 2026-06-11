@@ -160,6 +160,45 @@ Controlling arbitrary apps via the accessibility tree is brittle. AndroidClaw in
 - Default: serialize the accessibility node tree to a **compact text representation** (role, text, bounds, actionable flags) — cheap, no image tokens.
 - Optional: screenshot + vision model for apps with custom-rendered canvases (Flutter/games). Off by default to save tokens and RAM.
 
+### 5.4 The Floating Overlay Assistant ("Claw")
+
+The signature interaction. Claw is a **system-wide floating presence** that hovers over whatever app is in the foreground, so the user can issue an intent in natural language, have Claw **open the target app and perform the action**, and keep Claw docked alongside for follow-up — without leaving the app they're in.
+
+**Interaction model**
+
+1. User issues an intent ("reply to Mum on WhatsApp", "book the 7 pm slot", "summarise this thread") — by voice or text into the overlay.
+2. Claw routes the intent through the same stateless **Gateway**, which launches the app (`open_app`) and drives it (recipe or `read_screen` + `ui_action`).
+3. A **floating handle stays docked over the app**, so Claw can confirm a step, ask a clarifying question, or take the next instruction in-context.
+4. The handle is **dismissible to a screen-edge tab** ("side-rail") and **recalled with a tap**, so it never blocks the underlying UI.
+
+**Two visual states**
+
+| State | Form | Purpose |
+|---|---|---|
+| **Collapsed** | A thin tab clinging to the screen edge (draggable vertically, snaps to nearest edge). | Out of the way; one tap to summon. Obscures less than a chat-head bubble and reads as a drawer. |
+| **Expanded** | A compact card: transcript, text input, mic button, tool-status chips, and a confirmation strip for `Confirm`-tier actions. | Active conversation + action approval, overlaid right where the action will land. |
+
+**Mechanism**
+
+- Built on **`SYSTEM_ALERT_WINDOW`** ("draw over other apps") — the same primitive as Messenger chat-heads — hosted by a **low-priority foreground service** (`FOREGROUND_SERVICE` + ongoing notification, which Android requires for a persistent overlay and which doubles as a one-tap kill switch).
+- The overlay is the **presence**; the **AccessibilityService** (§5.1) is the **hands**. The overlay holds no model and no wakelock — it wakes only on tap/voice, honouring the idle-RAM and battery budget (§10).
+- **Voice-in is the primary fast path** (on-device `SpeechRecognizer`); text is the fallback — the whole point is "don't make me touch the other app".
+
+**Safety**
+
+- The expanded card surfaces a **confirmation strip** for every `Confirm`-tier action (*"Send 'I'll be late' to Mum? — Send / Edit / Cancel"*) before Claw acts in another app — the §11 consent model made visible at the point of action.
+- The card shows **how** Claw is acting — "Using WhatsApp recipe…" vs "Improvising…" — so the user knows how much to trust a given step.
+
+**Architecture fit**
+
+The overlay is a second **front-end** alongside the in-app chat, talking to the *same* Gateway via a thin `OverlayAgent` bridge (the app injects its gateway; the overlay module never depends on `app`). New actuator tools (`read_screen`, `ui_tap`, `ui_type`) join the existing registry. Nothing in `core-gateway`/`core-llm`/`core-tools` changes.
+
+**Constraints (flagged up front)**
+
+- Requires **two sensitive grants** — *Draw over other apps* + *Accessibility* — each a manual toggle in system Settings; onboarding must explain *why* per permission.
+- Google Play restricts non-accessibility use of AccessibilityService, so this is realistically a **sideload / F-Droid** build (acceptable for this project).
+- Per-app automation **breaks when apps restyle their UI**; recipes need maintenance, with the freeform `read_screen` loop as the safety net.
+
 ---
 
 ## 6. Tool Registry
@@ -300,6 +339,7 @@ core-gateway/             # Orchestrator loop, ReAct controller
 core-llm/                 # Provider interface + online adapters
 core-tools/               # Tool registry, schemas, executor
 core-control/             # AccessibilityService, Intents, recipes, notifications
+core-overlay/             # Floating "Claw" overlay: foreground service + edge-tab UI
 core-memory/              # Room + SQLCipher, retrieval, summarization
 core-common/              # Serialization, logging, result types
 feature-local-llm/        # (later) on-device inference flavor — optional module
@@ -314,7 +354,7 @@ Online-only build excludes `feature-local-llm` entirely, keeping the base APK mi
 | Phase | Scope |
 |---|---|
 | **P0 — Skeleton** | App shell, chat UI, one online provider, gateway loop, `web_fetch` + `open_app`. |
-| **P1 — Actuator** | AccessibilityService, `read_screen`, `ui_action`, recipe engine, confirmation cards, audit log. |
+| **P1 — Overlay & Actuator** | Floating "Claw" overlay (foreground service, edge-tab, expand/collapse), AccessibilityService, `read_screen`, `ui_action`, recipe engine, confirmation cards, audit log. |
 | **P2 — Comms** | NotificationListener triggers, `send_message`/`reply_notification`, PIM tools, device settings. |
 | **P3 — Memory & polish** | Long-term memory, summarization, spend caps, permissions dashboard, voice input. |
 | **P4 — Multi-provider & recipes** | Gemini/OpenAI/compatible adapters, recipe sharing/import, scoped sessions. |

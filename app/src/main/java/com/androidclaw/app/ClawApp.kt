@@ -7,6 +7,7 @@ import com.androidclaw.gateway.Gateway
 import com.androidclaw.llm.LlmProvider
 import com.androidclaw.llm.anthropic.AnthropicProvider
 import com.androidclaw.llm.openai.OpenAiCompatProvider
+import com.androidclaw.overlay.OverlayBridge
 import com.androidclaw.tools.ToolRegistry
 import com.androidclaw.tools.WebFetchTool
 import okhttp3.OkHttpClient
@@ -19,6 +20,8 @@ class ClawApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // Let the floating overlay reach the gateway without depending on `app`.
+        OverlayBridge.agent = OverlayAgentImpl(container)
     }
 }
 
