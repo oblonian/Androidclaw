@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import com.androidclaw.control.ClawAccessibilityService
 import com.androidclaw.overlay.OverlayService
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +39,10 @@ class MainActivity : ComponentActivity() {
                     onSignInOpenRouter = { OpenRouterAuth.launchSignIn(this, container.settings) },
                     onSignInAnthropic = { AnthropicAuth.launchSignIn(this, container.settings) },
                     onToggleOverlay = { enableOverlay() },
+                    onOpenAccessibility = {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    },
+                    isAccessibilityEnabled = { ClawAccessibilityService.isEnabled(this) },
                 )
             }
         }

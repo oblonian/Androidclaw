@@ -9,4 +9,20 @@
         </intent>
     </queries>
 
+    <application>
+        <!-- The actuator: reads the screen and drives taps/typing/scrolling in other apps. -->
+        <service
+            android:name=".ClawAccessibilityService"
+            android:exported="false"
+            android:label="AndroidClaw"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+
 </manifest>

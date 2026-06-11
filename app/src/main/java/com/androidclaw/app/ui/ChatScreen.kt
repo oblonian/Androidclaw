@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +59,8 @@ fun ChatScreen(
     onSignInOpenRouter: () -> Unit,
     onSignInAnthropic: () -> Unit,
     onToggleOverlay: () -> Unit,
+    onOpenAccessibility: () -> Unit,
+    isAccessibilityEnabled: () -> Boolean,
 ) {
     var showSettings by remember { mutableStateOf(vm.needsAuth) }
     var input by remember { mutableStateOf("") }
@@ -134,6 +137,8 @@ fun ChatScreen(
             },
             onSignInAnthropic = onSignInAnthropic,
             onConnectAnthropicCode = { code -> vm.connectAnthropicOAuth(code) },
+            onOpenAccessibility = onOpenAccessibility,
+            isAccessibilityEnabled = isAccessibilityEnabled,
             onDismiss = {
                 showSettings = false
                 vm.refreshAuthState()
@@ -194,6 +199,8 @@ private fun SettingsDialog(
     onSignInOpenRouter: () -> Unit,
     onSignInAnthropic: () -> Unit,
     onConnectAnthropicCode: suspend (String) -> Result<Unit>,
+    onOpenAccessibility: () -> Unit,
+    isAccessibilityEnabled: () -> Boolean,
     onDismiss: () -> Unit,
 ) {
     var backend by remember { mutableStateOf(settings.backend) }
@@ -329,6 +336,19 @@ private fun SettingsDialog(
                         singleLine = true,
                     )
                 }
+                HorizontalDivider()
+                val screenControlOn = isAccessibilityEnabled()
+                Text(
+                    if (screenControlOn) "✓ Screen control enabled"
+                    else "Screen control off — Claw can't tap inside other apps yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (screenControlOn) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                )
+                TextButton(onClick = onOpenAccessibility) {
+                    Text(if (screenControlOn) "Open Accessibility settings" else "Enable screen control")
+                }
+
                 Text(
                     "Stored encrypted on this device only.",
                     style = MaterialTheme.typography.bodySmall,

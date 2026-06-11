@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_description">Lets AndroidClaw read the screen and tap, type, and scroll in other apps to carry out the tasks you ask of it. Used only when you give Claw an instruction; nothing is sent anywhere without your request.</string>
+</resources>

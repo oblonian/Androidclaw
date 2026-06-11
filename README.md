@@ -15,9 +15,11 @@ See [SPEC.md](SPEC.md) for the full technical specification.
 - ✅ **OAuth sign-in via OpenRouter PKCE** — no manual API key needed
 - ✅ **OAuth sign-in via Anthropic (claude.ai)** — PKCE S256, Bearer token auth
 - ✅ Tool registry with permission tiers (`core-tools`)
-- ✅ Tools: `web_fetch`, `open_app`
+- ✅ Tools: `web_fetch`, `open_app`, `read_screen`, `ui_action`
+- ✅ **Floating "Claw" overlay** — draggable edge-tab over other apps (`core-overlay`)
+- ✅ **AccessibilityService actuator** — reads the screen and taps/types/scrolls in other apps (`core-control`)
 - ✅ Credentials stored via Android Keystore (EncryptedSharedPreferences)
-- ⏳ P1: AccessibilityService actuator, screen reading, app recipes, confirmation cards
+- ⏳ P1 remaining: App Recipe engine, confirmation cards for `CONFIRM`-tier actions, audit log
 
 ## Modules
 
@@ -27,7 +29,8 @@ See [SPEC.md](SPEC.md) for the full technical specification.
 | `core-gateway` | Kotlin/JVM | Orchestrator (ReAct loop) |
 | `core-llm` | Kotlin/JVM | `LlmProvider` interface + Anthropic adapter |
 | `core-tools` | Kotlin/JVM | Tool interface, registry, `web_fetch` |
-| `core-control` | Android lib | Device/app control tools (`open_app`) |
+| `core-control` | Android lib | Device/app control: `open_app`, AccessibilityService actuator (`read_screen`, `ui_action`) |
+| `core-overlay` | Android lib | Floating "Claw" overlay (foreground service + edge-tab UI) |
 | `core-common` | Kotlin/JVM | Shared JSON config |
 
 The pure-JVM core modules have no Android dependency, so the agent logic is
