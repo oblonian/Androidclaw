@@ -37,7 +37,10 @@ class WebFetchTool(
                 return@withContext ToolResult.error("HTTP ${response.code} for $url")
             }
             // Read at most 512 KB off the wire regardless of Content-Length.
-            val raw = response.body?.byteStream()?.readNBytes(512 * 1024)?.decodeToString().orEmpty()
+            val raw = response.body?.source()?.let { source ->
+                source.request(MAX_BODY_BYTES)
+                source.buffer.readUtf8(minOf(source.buffer.size, MAX_BODY_BYTES))
+            }.orEmpty()
             val text = if (raw.contains('<')) stripHtml(raw) else raw
             ToolResult(text.take(maxChars).ifBlank { "(empty page)" })
         }
@@ -53,4 +56,8 @@ class WebFetchTool(
         .replace(Regex("[ \\t]+"), " ")
         .replace(Regex("\\n\\s*\\n+"), "\n\n")
         .trim()
+
+    private companion object {
+        const val MAX_BODY_BYTES = 512L * 1024
+    }
 }
