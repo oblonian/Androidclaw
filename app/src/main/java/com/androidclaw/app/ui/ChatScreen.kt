@@ -5,10 +5,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +47,7 @@ import com.androidclaw.app.ChatItem
 import com.androidclaw.app.ChatViewModel
 import com.androidclaw.app.LlmBackend
 import com.androidclaw.app.SettingsStore
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +55,7 @@ fun ChatScreen(
     vm: ChatViewModel,
     settings: SettingsStore,
     onSignInOpenRouter: () -> Unit,
+    onSignInAnthropic: () -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(vm.needsAuth) }
     var input by remember { mutableStateOf("") }
@@ -122,6 +127,8 @@ fun ChatScreen(
                 showSettings = false
                 onSignInOpenRouter()
             },
+            onSignInAnthropic = onSignInAnthropic,
+            onConnectAnthropicCode = { code -> vm.connectAnthropicOAuth(code) },
             onDismiss = {
                 showSettings = false
                 vm.refreshAuthState()
@@ -180,6 +187,8 @@ private fun Bubble(text: String, alignEnd: Boolean, container: androidx.compose.
 private fun SettingsDialog(
     settings: SettingsStore,
     onSignInOpenRouter: () -> Unit,
+    onSignInAnthropic: () -> Unit,
+    onConnectAnthropicCode: suspend (String) -> Result<Unit>,
     onDismiss: () -> Unit,
 ) {
     var backend by remember { mutableStateOf(settings.backend) }
@@ -188,11 +197,19 @@ private fun SettingsDialog(
     var openRouterModel by remember { mutableStateOf(settings.openRouterModel) }
     val openRouterConnected = settings.openRouterKey != null
 
+    // Anthropic OAuth sub-section
+    var anthropicUseOAuth by remember { mutableStateOf(settings.anthropicUseOAuth) }
+    var oauthCode by remember { mutableStateOf("") }
+    var oauthConnecting by remember { mutableStateOf(false) }
+    var oauthMessage by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
     fun save() {
         settings.backend = backend
         settings.anthropicKey = anthropicKey
         settings.anthropicModel = anthropicModel
         settings.openRouterModel = openRouterModel
+        settings.anthropicUseOAuth = anthropicUseOAuth
     }
 
     AlertDialog(
@@ -201,7 +218,7 @@ private fun SettingsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 BackendOption(
-                    label = "Anthropic API key",
+                    label = "Anthropic",
                     selected = backend == LlmBackend.ANTHROPIC,
                     onSelect = { backend = LlmBackend.ANTHROPIC },
                 )
@@ -212,12 +229,77 @@ private fun SettingsDialog(
                 )
 
                 if (backend == LlmBackend.ANTHROPIC) {
-                    OutlinedTextField(
-                        value = anthropicKey,
-                        onValueChange = { anthropicKey = it },
-                        label = { Text("Anthropic API key") },
-                        singleLine = true,
-                    )
+                    // Auth method sub-selector
+                    Row(
+                        Modifier.padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = !anthropicUseOAuth, onClick = { anthropicUseOAuth = false })
+                        Text("API key", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.width(16.dp))
+                        RadioButton(selected = anthropicUseOAuth, onClick = { anthropicUseOAuth = true })
+                        Text("Claude account", style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    if (!anthropicUseOAuth) {
+                        OutlinedTextField(
+                            value = anthropicKey,
+                            onValueChange = { anthropicKey = it },
+                            label = { Text("Anthropic API key") },
+                            singleLine = true,
+                        )
+                    } else {
+                        // OAuth section
+                        val connected = settings.anthropicOAuthToken != null
+                        Text(
+                            if (connected) "✓ Connected via Claude account" else "Not connected",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (connected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Button(onClick = { onSignInAnthropic() }) {
+                            Text("Open Anthropic sign-in")
+                        }
+                        Text(
+                            "After signing in, copy the code shown in the browser and paste it below.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                        OutlinedTextField(
+                            value = oauthCode,
+                            onValueChange = { oauthCode = it },
+                            label = { Text("Paste auth code") },
+                            singleLine = true,
+                        )
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    oauthConnecting = true
+                                    val result = onConnectAnthropicCode(oauthCode)
+                                    oauthMessage = result.fold(
+                                        onSuccess = { "✓ Connected!" },
+                                        onFailure = { "Failed: ${it.message}" },
+                                    )
+                                    oauthConnecting = false
+                                    if (result.isSuccess) oauthCode = ""
+                                }
+                            },
+                            enabled = oauthCode.isNotBlank() && !oauthConnecting,
+                        ) {
+                            Text(if (oauthConnecting) "Connecting…" else "Connect")
+                        }
+                        if (oauthMessage.isNotEmpty()) {
+                            Text(
+                                oauthMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (oauthMessage.startsWith("✓"))
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+
                     OutlinedTextField(
                         value = anthropicModel,
                         onValueChange = { anthropicModel = it },

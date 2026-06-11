@@ -54,14 +54,39 @@ class SettingsStore(context: Context) {
             putString(KEY_OPENROUTER_MODEL, value.trim().ifBlank { DEFAULT_OPENROUTER_MODEL })
         }
 
-    /** PKCE verifier stashed across the OAuth browser round-trip. */
+    /** PKCE verifier stashed across the OpenRouter OAuth browser round-trip. */
     var pendingVerifier: String?
         get() = prefs.getString(KEY_PENDING_VERIFIER, null)
         set(value) = prefs.edit { putString(KEY_PENDING_VERIFIER, value) }
 
+    // ── Anthropic OAuth fields ────────────────────────────────────────────────
+
+    /** Whether to use OAuth Bearer token instead of a manual API key. */
+    var anthropicUseOAuth: Boolean
+        get() = prefs.getString(KEY_ANTHROPIC_USE_OAUTH, "false").toBoolean()
+        set(value) = prefs.edit { putString(KEY_ANTHROPIC_USE_OAUTH, value.toString()) }
+
+    var anthropicOAuthToken: String?
+        get() = prefs.getString(KEY_ANTHROPIC_OAUTH_TOKEN, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit { putString(KEY_ANTHROPIC_OAUTH_TOKEN, value?.trim()) }
+
+    var anthropicOAuthRefreshToken: String?
+        get() = prefs.getString(KEY_ANTHROPIC_OAUTH_REFRESH, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit { putString(KEY_ANTHROPIC_OAUTH_REFRESH, value?.trim()) }
+
+    /** Epoch-millis expiry of the access token; 0 if not set. */
+    var anthropicOAuthExpiry: Long
+        get() = prefs.getString(KEY_ANTHROPIC_OAUTH_EXPIRY, "0")?.toLongOrNull() ?: 0L
+        set(value) = prefs.edit { putString(KEY_ANTHROPIC_OAUTH_EXPIRY, value.toString()) }
+
+    /** PKCE verifier stashed across the Anthropic OAuth browser round-trip. */
+    var anthropicPkceVerifier: String?
+        get() = prefs.getString(KEY_ANTHROPIC_PKCE_VERIFIER, null)
+        set(value) = prefs.edit { putString(KEY_ANTHROPIC_PKCE_VERIFIER, value) }
+
     val isConfigured: Boolean
         get() = when (backend) {
-            LlmBackend.ANTHROPIC -> anthropicKey != null
+            LlmBackend.ANTHROPIC -> anthropicKey != null || anthropicOAuthToken != null
             LlmBackend.OPENROUTER -> openRouterKey != null
         }
 
@@ -72,6 +97,11 @@ class SettingsStore(context: Context) {
         private const val KEY_OPENROUTER_KEY = "openrouter_key"
         private const val KEY_OPENROUTER_MODEL = "openrouter_model"
         private const val KEY_PENDING_VERIFIER = "pending_verifier"
+        private const val KEY_ANTHROPIC_USE_OAUTH = "anthropic_use_oauth"
+        private const val KEY_ANTHROPIC_OAUTH_TOKEN = "anthropic_oauth_token"
+        private const val KEY_ANTHROPIC_OAUTH_REFRESH = "anthropic_oauth_refresh"
+        private const val KEY_ANTHROPIC_OAUTH_EXPIRY = "anthropic_oauth_expiry"
+        private const val KEY_ANTHROPIC_PKCE_VERIFIER = "anthropic_pkce_verifier"
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
         const val DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6"
     }

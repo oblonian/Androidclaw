@@ -43,8 +43,20 @@ class AppContainer(context: Context) {
     /** Built per turn so settings changes apply immediately. Null until configured. */
     fun gateway(): Gateway? {
         val provider: LlmProvider = when (settings.backend) {
-            LlmBackend.ANTHROPIC -> settings.anthropicKey?.let {
-                AnthropicProvider(http, it, settings.anthropicModel)
+            LlmBackend.ANTHROPIC -> when {
+                settings.anthropicUseOAuth && settings.anthropicOAuthToken != null ->
+                    AnthropicProvider(
+                        client = http,
+                        bearerToken = settings.anthropicOAuthToken!!,
+                        model = settings.anthropicModel,
+                    )
+                settings.anthropicKey != null ->
+                    AnthropicProvider(
+                        client = http,
+                        apiKey = settings.anthropicKey!!,
+                        model = settings.anthropicModel,
+                    )
+                else -> null
             }
             LlmBackend.OPENROUTER -> settings.openRouterKey?.let {
                 OpenAiCompatProvider(

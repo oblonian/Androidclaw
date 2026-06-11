@@ -13,6 +13,7 @@ See [SPEC.md](SPEC.md) for the full technical specification.
 - ✅ Anthropic Messages API provider with tool use (`core-llm`)
 - ✅ OpenAI-compatible provider (OpenRouter, OpenAI, self-hosted gateways)
 - ✅ **OAuth sign-in via OpenRouter PKCE** — no manual API key needed
+- ✅ **OAuth sign-in via Anthropic (claude.ai)** — PKCE S256, Bearer token auth
 - ✅ Tool registry with permission tiers (`core-tools`)
 - ✅ Tools: `web_fetch`, `open_app`
 - ✅ Credentials stored via Android Keystore (EncryptedSharedPreferences)

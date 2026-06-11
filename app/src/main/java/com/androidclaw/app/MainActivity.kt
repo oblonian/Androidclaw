@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
                     vm = vm,
                     settings = container.settings,
                     onSignInOpenRouter = { OpenRouterAuth.launchSignIn(this, container.settings) },
+                    onSignInAnthropic = { AnthropicAuth.launchSignIn(this, container.settings) },
                 )
             }
         }

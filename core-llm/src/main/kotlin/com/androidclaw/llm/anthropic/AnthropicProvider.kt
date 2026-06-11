@@ -33,10 +33,15 @@ import okhttp3.sse.EventSources
 /**
  * Streaming client for the Anthropic Messages API with tool use.
  * https://docs.anthropic.com/en/api/messages-streaming
+ *
+ * Supports two auth modes:
+ *  - API key:    x-api-key header (apiKey non-empty)
+ *  - OAuth:      Authorization: Bearer header (bearerToken non-empty)
  */
 class AnthropicProvider(
     private val client: OkHttpClient,
-    private val apiKey: String,
+    private val apiKey: String = "",
+    private val bearerToken: String = "",
     private val model: String,
     private val baseUrl: String = "https://api.anthropic.com",
 ) : LlmProvider {
@@ -48,8 +53,15 @@ class AnthropicProvider(
             .toRequestBody("application/json".toMediaType())
         val httpRequest = Request.Builder()
             .url("$baseUrl/v1/messages")
-            .header("x-api-key", apiKey)
-            .header("anthropic-version", "2023-06-01")
+            .apply {
+                if (bearerToken.isNotEmpty()) {
+                    header("Authorization", "Bearer $bearerToken")
+                    header("anthropic-beta", "oauth-2025-04-20")
+                } else {
+                    header("x-api-key", apiKey)
+                    header("anthropic-version", "2023-06-01")
+                }
+            }
             .post(body)
             .build()
 

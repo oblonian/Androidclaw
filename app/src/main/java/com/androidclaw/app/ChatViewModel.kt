@@ -35,6 +35,10 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         needsAuth = !container.settings.isConfigured
     }
 
+    suspend fun connectAnthropicOAuth(code: String): Result<Unit> =
+        AnthropicAuth.exchangeCode(container.http, container.settings, code)
+            .also { refreshAuthState() }
+
     fun send(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || busy) return
