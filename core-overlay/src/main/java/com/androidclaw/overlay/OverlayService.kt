@@ -101,12 +101,17 @@ class OverlayService : Service() {
     private suspend fun handleConfirm(description: String): OverlayDecision {
         val deferred = CompletableDeferred<OverlayDecision>()
         withContext(Dispatchers.Main.immediate) {
+            // Cancel any prior pending confirm (two concurrent callers would otherwise
+            // overwrite pendingConfirm, leaving the first deferred abandoned forever).
+            pendingConfirm?.complete(OverlayDecision.Stop)
             pendingConfirmText = description
             pendingConfirm = deferred
             showExpanded()
         }
         val decision = deferred.await()
         withContext(Dispatchers.Main.immediate) {
+            // Guard: service may have been destroyed while we were suspended.
+            if (rootView == null) return@withContext
             pendingConfirmText = null
             pendingConfirm = null
             showExpanded()
@@ -226,7 +231,12 @@ class OverlayService : Service() {
         expanded = true
         params.width = dp(320)
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
-        params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        // CRITICAL: keep FLAG_NOT_FOCUSABLE even when expanded. Android's
+        // AccessibilityService.getRootInActiveWindow() returns the FOCUSED window.
+        // If our overlay steals focus, read_screen returns our view tree instead of
+        // YouTube's (or whatever the target app is), breaking all screen reads.
+        // The EditText uses a click listener to temporarily clear this flag when needed.
+        params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -256,6 +266,9 @@ class OverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(11), dp(10), dp(11))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(Color.parseColor("#C62828"), Color.parseColor("#E64A19")),
@@ -297,10 +310,7 @@ class OverlayService : Service() {
         return header
     }
 
-    private fun buildTranscriptArea(): FrameLayout {
-        val container = FrameLayout(this).apply {
-            background = GradientDrawable().apply { setColor(Color.parseColor("#0E0D1C")) }
-        }
+    private fun buildTranscriptArea(): ScrollView {
         val tv = TextView(this).apply {
             text = if (transcript.isEmpty()) "Ask Claw something…" else transcript.toString()
             textSize = 12.5f
@@ -309,21 +319,22 @@ class OverlayService : Service() {
             setLineSpacing(dp(2).toFloat(), 1f)
         }
         transcriptView = tv
-        val scroll = ScrollView(this).apply {
+        return ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor("#0E0D1C"))
+            addView(tv)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(200),
             )
-            addView(tv)
-        }
-        scrollView = scroll
-        container.addView(scroll)
-        return container
+        }.also { scrollView = it }
     }
 
     private fun buildConfirmPanel(pending: String): LinearLayout {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(6))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#251E00"))
                 setStroke(dp(2), Color.parseColor("#FFA000"))
@@ -387,6 +398,9 @@ class OverlayService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(8), dp(8), dp(8))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
             background = GradientDrawable().apply { setColor(Color.parseColor("#14132A")) }
         }
         val input = EditText(this).apply {
@@ -409,6 +423,16 @@ class OverlayService : Service() {
                 .also { it.setMargins(0, 0, dp(8), 0) }
             imeOptions = EditorInfo.IME_ACTION_SEND
         }
+        // Tapping the input temporarily clears FLAG_NOT_FOCUSABLE so the keyboard appears.
+        // FLAG_NOT_FOCUSABLE is normally kept set so the AccessibilityService's
+        // rootInActiveWindow stays on the target app (YouTube etc.), not on our overlay.
+        input.setOnClickListener {
+            if (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0) {
+                params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                rootView?.let { windowManager.updateViewLayout(it, params) }
+                input.requestFocus()
+            }
+        }
         val sendBtn = TextView(this).apply {
             text = "↑"
             textSize = 18f
@@ -426,6 +450,9 @@ class OverlayService : Service() {
             val text = input.text?.toString()?.trim().orEmpty()
             if (text.isNotEmpty()) {
                 input.setText("")
+                // Restore FLAG_NOT_FOCUSABLE so accessibility reads the target app again.
+                params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                rootView?.let { windowManager.updateViewLayout(it, params) }
                 if (pendingConfirmText != null) resolveConfirm(OverlayDecision.Chat(text))
                 else send(text)
             }
@@ -455,11 +482,16 @@ class OverlayService : Service() {
             appendLine("⚠ Open the Claw app and sign in first.")
             return
         }
+        // Clean up any confirm waiting from a previous (now-cancelled) turn so its
+        // suspended coroutine can unblock and exit cleanly.
+        turnJob?.cancel()
+        pendingConfirm?.complete(OverlayDecision.Stop)
+        pendingConfirm = null
+        pendingConfirmText = null
         appendLine("You: $text")
         assistantLineStart = -1
         isAgentActive = true
         if (!expanded) showExpanded() else updateActiveStatus()
-        turnJob?.cancel()
         turnJob = agent.runTurn(text).onEach { render(it) }.launchIn(scope)
     }
 
