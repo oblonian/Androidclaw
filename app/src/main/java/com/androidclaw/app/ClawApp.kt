@@ -36,6 +36,8 @@ class AppContainer(context: Context) {
 
     val settings = SettingsStore(context)
 
+    val sessionStore = SessionStore(context)
+
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS) // streaming responses stay open

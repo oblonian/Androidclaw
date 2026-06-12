@@ -1,6 +1,8 @@
 package com.androidclaw.app.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +48,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.RadioButton
@@ -66,6 +71,7 @@ fun ChatScreen(
     isAccessibilityEnabled: () -> Boolean,
 ) {
     var showSettings by remember { mutableStateOf(vm.needsAuth) }
+    var showPlaybook by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -78,6 +84,9 @@ fun ChatScreen(
             TopAppBar(
                 title = { Text("AndroidClaw") },
                 actions = {
+                    IconButton(onClick = { showPlaybook = true }) {
+                        Icon(Icons.Default.List, contentDescription = "Playbook")
+                    }
                     IconButton(onClick = onToggleOverlay) {
                         Icon(Icons.Default.Face, contentDescription = "Float Claw overlay")
                     }
@@ -141,6 +150,23 @@ fun ChatScreen(
         }
     }
 
+    if (showPlaybook) {
+        PlaybookScreen(
+            sessions = vm.sessions,
+            onSelectSession = { session ->
+                vm.loadSession(session)
+                showPlaybook = false
+            },
+            onDeleteSession = { vm.deleteSession(it) },
+            onUseQuickAction = { prompt ->
+                input = prompt
+                showPlaybook = false
+            },
+            onBack = { showPlaybook = false },
+        )
+        return
+    }
+
     if (showSettings) {
         SettingsDialog(
             settings = settings,
@@ -168,11 +194,15 @@ private fun ChatBubble(item: ChatItem) {
             alignEnd = true,
             container = MaterialTheme.colorScheme.primaryContainer,
         )
-        is ChatItem.Assistant -> Bubble(
-            text = item.text + if (item.streaming) " ▌" else "",
-            alignEnd = false,
-            container = MaterialTheme.colorScheme.surfaceVariant,
-        )
+        is ChatItem.Assistant -> {
+            val clipboard = LocalClipboardManager.current
+            Bubble(
+                text = item.text + if (item.streaming) " ▌" else "",
+                alignEnd = false,
+                container = MaterialTheme.colorScheme.surfaceVariant,
+                onLongClick = if (!item.streaming) ({ clipboard.setText(AnnotatedString(item.text)) }) else null,
+            )
+        }
         is ChatItem.ToolUse -> Text(
             text = when {
                 item.running -> "⚙ ${item.name}…"
@@ -246,14 +276,25 @@ private fun StepBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Bubble(text: String, alignEnd: Boolean, container: androidx.compose.ui.graphics.Color) {
+private fun Bubble(
+    text: String,
+    alignEnd: Boolean,
+    container: androidx.compose.ui.graphics.Color,
+    onLongClick: (() -> Unit)? = null,
+) {
     Box(Modifier.fillMaxWidth(), contentAlignment = if (alignEnd) Alignment.CenterEnd else Alignment.CenterStart) {
         Text(
             text = text,
             modifier = Modifier
                 .widthIn(max = 320.dp)
                 .background(container, RoundedCornerShape(16.dp))
+                .then(
+                    if (onLongClick != null)
+                        Modifier.combinedClickable(onClick = {}, onLongClick = onLongClick)
+                    else Modifier
+                )
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             style = MaterialTheme.typography.bodyMedium,
         )

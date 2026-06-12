@@ -9,6 +9,8 @@ import com.androidclaw.gateway.AgentEvent
 import com.androidclaw.gateway.ConfirmDecision
 import com.androidclaw.gateway.Confirmer
 import com.androidclaw.llm.ChatMessage
+import com.androidclaw.llm.ContentBlock
+import com.androidclaw.llm.Role
 import com.androidclaw.llm.ToolCall
 import com.androidclaw.overlay.OverlayBridge
 import com.androidclaw.overlay.OverlayDecision
@@ -32,6 +34,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     var busy by mutableStateOf(false)
         private set
     var needsAuth by mutableStateOf(!container.settings.isConfigured)
+        private set
+    var sessions by mutableStateOf(container.sessionStore.loadAll())
         private set
 
     /** Non-null while a device action is awaiting the user's step-through verdict. */
@@ -104,6 +108,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                         conversation = event.messages
                         finishStreamingBubble()
                         busy = false
+                        container.sessionStore.save(items)
+                        sessions = container.sessionStore.loadAll()
                     }
                     is AgentEvent.TurnFailed -> {
                         finishStreamingBubble()
@@ -144,6 +150,23 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             }
             else -> call.name + (arg("app")?.let { " “$it”" } ?: "")
         }
+    }
+
+    fun loadSession(session: SavedSession) {
+        cancelTurn()
+        items = session.messages.map { msg ->
+            if (msg.role == "user") ChatItem.User(msg.text)
+            else ChatItem.Assistant(msg.text, streaming = false)
+        }
+        conversation = session.messages.map { msg ->
+            if (msg.role == "user") ChatMessage.user(msg.text)
+            else ChatMessage(Role.ASSISTANT, listOf(ContentBlock.Text(msg.text)))
+        }
+    }
+
+    fun deleteSession(session: SavedSession) {
+        container.sessionStore.delete(session.id)
+        sessions = container.sessionStore.loadAll()
     }
 
     fun cancelTurn() {

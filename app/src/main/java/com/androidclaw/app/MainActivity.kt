@@ -19,7 +19,12 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.androidclaw.app.ui.ChatScreen
+import com.androidclaw.app.ui.SetupScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -33,17 +38,39 @@ class MainActivity : ComponentActivity() {
         handleOAuthCallback(intent)
         setContent {
             ClawTheme {
-                ChatScreen(
-                    vm = vm,
-                    settings = container.settings,
-                    onSignInOpenRouter = { OpenRouterAuth.launchSignIn(this, container.settings) },
-                    onSignInAnthropic = { AnthropicAuth.launchSignIn(this, container.settings) },
-                    onToggleOverlay = { enableOverlay() },
-                    onOpenAccessibility = {
-                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    },
-                    isAccessibilityEnabled = { ClawAccessibilityService.isEnabled(this) },
-                )
+                var showSetup by remember { mutableStateOf(!container.settings.isConfigured) }
+                if (showSetup) {
+                    SetupScreen(
+                        settings = container.settings,
+                        isOverlayGranted = { OverlayService.canDraw(this) },
+                        isAccessibilityGranted = { ClawAccessibilityService.isEnabled(this) },
+                        onRequestOverlay = { enableOverlay() },
+                        onRequestAccessibility = {
+                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        },
+                        onSignInAnthropic = { AnthropicAuth.launchSignIn(this, container.settings) },
+                        onSignInOpenRouter = { OpenRouterAuth.launchSignIn(this, container.settings) },
+                        onConnectAnthropicCode = { code ->
+                            vm.connectAnthropicOAuth(code).also { vm.refreshAuthState() }
+                        },
+                        onContinue = {
+                            vm.refreshAuthState()
+                            showSetup = false
+                        },
+                    )
+                } else {
+                    ChatScreen(
+                        vm = vm,
+                        settings = container.settings,
+                        onSignInOpenRouter = { OpenRouterAuth.launchSignIn(this, container.settings) },
+                        onSignInAnthropic = { AnthropicAuth.launchSignIn(this, container.settings) },
+                        onToggleOverlay = { enableOverlay() },
+                        onOpenAccessibility = {
+                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        },
+                        isAccessibilityEnabled = { ClawAccessibilityService.isEnabled(this) },
+                    )
+                }
             }
         }
     }
