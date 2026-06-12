@@ -286,7 +286,7 @@ fun SetupScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Enable in Accessibility settings") }
                     Text(
-                        "Find "AndroidClaw" in the list and toggle it on.",
+                        "Find \"AndroidClaw\" in the list and toggle it on.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                     )
