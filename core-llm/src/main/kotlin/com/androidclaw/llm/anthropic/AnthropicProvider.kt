@@ -54,12 +54,13 @@ class AnthropicProvider(
         val httpRequest = Request.Builder()
             .url("$baseUrl/v1/messages")
             .apply {
+                // anthropic-version is required on every request, regardless of auth mode.
+                header("anthropic-version", "2023-06-01")
                 if (bearerToken.isNotEmpty()) {
                     header("Authorization", "Bearer $bearerToken")
                     header("anthropic-beta", "oauth-2025-04-20")
                 } else {
                     header("x-api-key", apiKey)
-                    header("anthropic-version", "2023-06-01")
                 }
             }
             .post(body)
@@ -150,7 +151,22 @@ class AnthropicProvider(
         put("model", model)
         put("max_tokens", request.maxTokens)
         put("stream", true)
-        put("system", request.system)
+        if (bearerToken.isNotEmpty()) {
+            // OAuth tokens are scoped to the Claude Code client; the API requires the
+            // system prompt to begin with its identity block. Ours follows as a second block.
+            put("system", buildJsonArray {
+                add(buildJsonObject {
+                    put("type", "text")
+                    put("text", "You are Claude Code, Anthropic's official CLI for Claude.")
+                })
+                add(buildJsonObject {
+                    put("type", "text")
+                    put("text", request.system)
+                })
+            })
+        } else {
+            put("system", request.system)
+        }
         put("messages", buildJsonArray {
             request.messages.forEach { add(encodeMessage(it)) }
         })
