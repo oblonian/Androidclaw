@@ -10,6 +10,8 @@ import com.androidclaw.gateway.ConfirmDecision
 import com.androidclaw.gateway.Confirmer
 import com.androidclaw.llm.ChatMessage
 import com.androidclaw.llm.ToolCall
+import com.androidclaw.overlay.OverlayBridge
+import com.androidclaw.overlay.OverlayDecision
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -44,6 +46,18 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     /** Gates each CONFIRM-tier action through the UI when step-through is on. */
     private val confirmer = Confirmer { call ->
         if (!container.settings.stepThrough) return@Confirmer ConfirmDecision.Proceed
+        // Prefer overlay (visible on top of any app — YouTube, WhatsApp, etc.)
+        val overlayConfirm = OverlayBridge.confirmHandler
+        if (overlayConfirm != null) {
+            val od = overlayConfirm(describe(call))
+            return@Confirmer when (od) {
+                OverlayDecision.Proceed -> ConfirmDecision.Proceed
+                OverlayDecision.Back -> ConfirmDecision.Back
+                OverlayDecision.Stop -> ConfirmDecision.Cancel
+                is OverlayDecision.Chat -> ConfirmDecision.Chat(od.note)
+            }
+        }
+        // Fallback: in-app step bar (user is looking at Claw)
         val deferred = CompletableDeferred<ConfirmDecision>()
         pendingDecision = deferred
         pendingStep = describe(call)

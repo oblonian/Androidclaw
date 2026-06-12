@@ -5,6 +5,7 @@ import com.androidclaw.tools.PermissionTier
 import com.androidclaw.tools.Tool
 import com.androidclaw.tools.ToolResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -68,8 +69,12 @@ class UiActionTool : Tool {
         val result = when (action) {
             "tap" -> target?.let { service.click(it) }
                 ?: "tap needs a 'target' (the element text/description)"
-            "type" -> text?.let { service.typeText(target, it) }
-                ?: "type needs 'text' to enter"
+            "type" -> text?.let { t ->
+                // Retry up to ~2 s — the target field may appear after a tap/animation
+                service.typeTextOrNull(target, t)
+                    ?: run { delay(700); service.typeTextOrNull(target, t) }
+                    ?: run { delay(1300); service.typeText(target, t) }
+            } ?: "type needs 'text' to enter"
             "scroll" -> service.scroll(forward = !direction.equals("up", ignoreCase = true))
             "back", "home", "recents" -> service.globalAction(action)
             else -> "Unknown action '$action'"

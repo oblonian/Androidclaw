@@ -102,6 +102,32 @@ class ClawAccessibilityService : AccessibilityService() {
             } else null
             ) ?: findNode(root) { it.isEditable }
             ?: return "No text field found on screen"
+        // Click first to wake up the field (e.g. YouTube search bar appears after tap)
+        field.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        field.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        return if (field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) "Typed the text"
+        else "Found a field but typing was not accepted"
+    }
+
+    /**
+     * Like [typeText] but returns null instead of an error string when no field is found.
+     * Used by [UiActionTool] for retry loops (field may appear after animation).
+     */
+    fun typeTextOrNull(target: String?, text: String): String? {
+        val root = rootInActiveWindow ?: return null
+        val field = (
+            if (!target.isNullOrBlank()) findNode(root) { n ->
+                n.isEditable && (
+                    n.text?.toString()?.contains(target, true) == true ||
+                        n.contentDescription?.toString()?.contains(target, true) == true
+                    )
+            } else null
+            ) ?: findNode(root) { it.isEditable }
+            ?: return null
+        field.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         field.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
