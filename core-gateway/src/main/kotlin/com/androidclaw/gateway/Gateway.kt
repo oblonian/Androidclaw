@@ -85,7 +85,14 @@ class Gateway(
                 val result = when (decision) {
                     ConfirmDecision.Proceed -> {
                         emit(AgentEvent.ToolStarted(call))
-                        tools.execute(call).also { emit(AgentEvent.ToolFinished(call, it)) }
+                        // A buggy tool must not abort the turn (or crash the collector) —
+                        // surface the failure to the model as an error result instead.
+                        runCatching { tools.execute(call) }
+                            .getOrElse { e ->
+                                if (e is kotlinx.coroutines.CancellationException) throw e
+                                ToolResult("Tool crashed: ${e.message ?: e.javaClass.simpleName}", isError = true)
+                            }
+                            .also { emit(AgentEvent.ToolFinished(call, it)) }
                     }
                     ConfirmDecision.Back -> ToolResult(
                         "User stepped back — do NOT take this action. Reconsider the previous " +

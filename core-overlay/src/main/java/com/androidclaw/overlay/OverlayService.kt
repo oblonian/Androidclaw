@@ -18,8 +18,10 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -31,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
@@ -120,7 +123,24 @@ class OverlayService : Service() {
     }
 
     private fun resolveConfirm(decision: OverlayDecision) {
+        // The user may have tapped the input (making the window focusable) and then
+        // pressed a button instead of typing. Restore FLAG_NOT_FOCUSABLE before the
+        // agent continues, or rootInActiveWindow would return OUR tree, not the
+        // target app's — making every subsequent read_screen blind.
+        restoreNotFocusable()
         pendingConfirm?.complete(decision)
+    }
+
+    /** Re-asserts FLAG_NOT_FOCUSABLE (and hides the IME) if the input had cleared it. */
+    private fun restoreNotFocusable() {
+        if (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE == 0) {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            rootView?.let {
+                getSystemService(InputMethodManager::class.java)
+                    .hideSoftInputFromWindow(it.windowToken, 0)
+                windowManager.updateViewLayout(it, params)
+            }
+        }
     }
 
     // ── Foreground notification ───────────────────────────────────────────────
@@ -430,7 +450,14 @@ class OverlayService : Service() {
             if (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0) {
                 params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
                 rootView?.let { windowManager.updateViewLayout(it, params) }
+            }
+            // updateViewLayout applies the focusability change asynchronously; an
+            // immediate requestFocus() lands before the window can take focus and the
+            // IME never shows. Post the focus + explicit IME request to the next frame.
+            input.post {
                 input.requestFocus()
+                getSystemService(InputMethodManager::class.java)
+                    .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
             }
         }
         val sendBtn = TextView(this).apply {
@@ -451,8 +478,7 @@ class OverlayService : Service() {
             if (text.isNotEmpty()) {
                 input.setText("")
                 // Restore FLAG_NOT_FOCUSABLE so accessibility reads the target app again.
-                params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                rootView?.let { windowManager.updateViewLayout(it, params) }
+                restoreNotFocusable()
                 if (pendingConfirmText != null) resolveConfirm(OverlayDecision.Chat(text))
                 else send(text)
             }
@@ -492,7 +518,12 @@ class OverlayService : Service() {
         assistantLineStart = -1
         isAgentActive = true
         if (!expanded) showExpanded() else updateActiveStatus()
-        turnJob = agent.runTurn(text).onEach { render(it) }.launchIn(scope)
+        turnJob = agent.runTurn(text)
+            .onEach { render(it) }
+            // Gateway only converts LlmException to TurnFailed; anything else thrown
+            // by a tool would otherwise escape launchIn and crash the whole process.
+            .catch { e -> render(OverlayReply.Failed(e.message ?: "Something went wrong")) }
+            .launchIn(scope)
     }
 
     private fun render(reply: OverlayReply) {
@@ -566,20 +597,27 @@ class OverlayService : Service() {
     }
 
     private fun attachDragAndTap(handle: View, onTap: () -> Unit) {
+        // Use the system touch slop: a hand-held tap easily wobbles past a few px,
+        // and a too-tight threshold makes taps register as drags (tab "ignores" taps).
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
         var downY = 0f
         var startY = 0
         var dragged = false
         handle.setOnTouchListener { _, event ->
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { downY = event.rawY; startY = params.y; dragged = false; true }
                 MotionEvent.ACTION_MOVE -> {
                     val dy = (event.rawY - downY).roundToInt()
-                    if (abs(dy) > dp(6)) dragged = true
-                    params.y = (startY + dy).coerceAtLeast(0)
-                    rootView?.let { windowManager.updateViewLayout(it, params) }
+                    if (abs(dy) > slop) dragged = true
+                    // Only move the window once it's a real drag — otherwise taps jitter it.
+                    if (dragged) {
+                        params.y = (startY + dy).coerceAtLeast(0)
+                        rootView?.let { windowManager.updateViewLayout(it, params) }
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> { if (!dragged) onTap(); true }
+                MotionEvent.ACTION_CANCEL -> { dragged = false; true }
                 else -> false
             }
         }
