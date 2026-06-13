@@ -50,6 +50,38 @@ no key handling) or paste an Anthropic API key in Settings. Credentials are
 stored encrypted and never leave the device. Defaults: `claude-sonnet-4-6`
 (Anthropic) / `anthropic/claude-sonnet-4.6` (OpenRouter).
 
+## Troubleshooting
+
+### "Restricted setting" when enabling Accessibility (Android 13+)
+
+When AndroidClaw is sideloaded (APK tapped from a browser/Downloads rather than
+installed through the Play Store), Android 13+ blocks the Accessibility toggle
+as a "Restricted setting." The option to allow it lives on the **App info**
+screen, not the Accessibility screen — and only appears *after* you've been
+blocked once. Exact steps:
+
+1. **Settings → Accessibility → AndroidClaw** → try to turn it **on**.
+   It greys out or shows a "Restricted setting" notice. Dismiss it.
+   *(This step is mandatory — Android hides the override until you've attempted
+   the blocked action at least once.)*
+2. **Settings → Apps → AndroidClaw** → tap the **⋮ (three dots)** in the
+   top-right → **"Allow restricted settings"** → confirm with PIN/fingerprint.
+3. Go back to **Settings → Accessibility → AndroidClaw** → the toggle now works.
+
+OEM variations:
+- **Samsung (One UI):** tapping the toggle shows a pop-up directly — tap
+  **"Settings"** in it and follow the prompt.
+- **Xiaomi / HyperOS:** the override is a row on the App info screen rather than
+  in the ⋮ menu.
+- The "Allow restricted settings" item only appears in the ⋮ menu in supported
+  locales; look for a lock/shield row otherwise.
+
+**Avoid it entirely:** install or update with the `install.sh` / `install.bat`
+from the GitHub release. They run `adb install -i com.android.vending`, which
+records the Play Store as the installer so the restriction never triggers.
+On-device with no PC, the same `adb` command can be run from Termux or **LADB**
+over Wireless Debugging (Android 11+, loopback `127.0.0.1`).
+
 ## Design constraints
 
 - **Idle RSS < 60 MB, no background polling** — fully event-driven
