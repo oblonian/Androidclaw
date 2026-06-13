@@ -188,6 +188,7 @@ class GatewayTest {
         val events = gateway.runTurn(history).toList()
 
         assertEquals(3, provider.calls)
-        assertTrue(events.last() is AgentEvent.TurnFailed)
+        val limitEvent = events.last() as AgentEvent.TurnLimitReached
+        assertEquals(3, limitEvent.max)
     }
 }
