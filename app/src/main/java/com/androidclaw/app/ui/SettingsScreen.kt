@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +50,7 @@ fun SettingsScreen(
     onConnectAnthropicCode: suspend (String) -> Result<Unit>,
     onOpenAccessibility: () -> Unit,
     isAccessibilityEnabled: () -> Boolean,
+    onSignOut: () -> Unit,
     onClose: () -> Unit,
 ) {
     var backend by remember { mutableStateOf(settings.backend) }
@@ -250,6 +252,16 @@ fun SettingsScreen(
                 onClick = { save(); onClose() },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Save & close") }
+
+            if (settings.isConfigured) {
+                OutlinedButton(
+                    onClick = { settings.signOut(); onSignOut() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("Sign out") }
+            }
         }
     }
 }

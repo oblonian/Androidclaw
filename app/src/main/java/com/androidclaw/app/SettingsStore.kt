@@ -94,6 +94,19 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_STEP_THROUGH, "true").toBoolean()
         set(value) = prefs.edit { putString(KEY_STEP_THROUGH, value.toString()) }
 
+    /** Clears all stored credentials. The backend preference is kept so the sign-in screen
+     *  pre-selects the last-used provider. */
+    fun signOut() {
+        prefs.edit {
+            remove(KEY_ANTHROPIC_KEY)
+            remove(KEY_ANTHROPIC_OAUTH_TOKEN)
+            remove(KEY_ANTHROPIC_OAUTH_REFRESH)
+            remove(KEY_ANTHROPIC_OAUTH_EXPIRY)
+            remove(KEY_ANTHROPIC_USE_OAUTH)
+            remove(KEY_OPENROUTER_KEY)
+        }
+    }
+
     val isConfigured: Boolean
         get() = when (backend) {
             LlmBackend.ANTHROPIC -> anthropicKey != null || anthropicOAuthToken != null

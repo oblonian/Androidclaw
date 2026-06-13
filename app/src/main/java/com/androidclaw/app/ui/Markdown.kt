@@ -87,11 +87,21 @@ private fun parseBlocks(src: String): List<MdBlock> {
     return blocks
 }
 
-/** Parses inline spans (**bold**, *italic*, `code`) into a styled string. */
+/** Parses inline spans (`***bold italic***`, `**bold**`, `*italic*`, `` `code` ``) into a styled string. */
 private fun AnnotatedString.Builder.appendInline(text: String, codeBg: Color) {
     var i = 0
     while (i < text.length) {
         when {
+            // bold+italic must be checked before bold, which must be checked before italic
+            text.startsWith("***", i) -> {
+                val end = text.indexOf("***", i + 3)
+                if (end != -1) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) {
+                        appendInline(text.substring(i + 3, end), codeBg)
+                    }
+                    i = end + 3
+                } else { append(text[i]); i++ }
+            }
             text.startsWith("**", i) -> {
                 val end = text.indexOf("**", i + 2)
                 if (end != -1) {

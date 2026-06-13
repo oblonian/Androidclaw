@@ -179,6 +179,18 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         busy = false
     }
 
+    /** Re-sends the last user message, stripping the failed response from history. */
+    fun retryLastTurn() {
+        if (busy) return
+        val lastUserIdx = items.indexOfLast { it is ChatItem.User }
+        if (lastUserIdx < 0) return
+        val lastUser = items[lastUserIdx] as ChatItem.User
+        items = items.take(lastUserIdx)
+        val lastUserConvIdx = conversation.indexOfLast { it.role == Role.USER }
+        if (lastUserConvIdx >= 0) conversation = conversation.take(lastUserConvIdx)
+        send(lastUser.text)
+    }
+
     fun clearChat() {
         cancelTurn()
         conversation = emptyList()

@@ -16,7 +16,11 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -63,8 +67,10 @@ class OverlayService : Service() {
     private var transcriptView: TextView? = null
     private var scrollView: ScrollView? = null
     private var statusDotView: TextView? = null
-    private val transcript = StringBuilder()
+    private val transcript = SpannableStringBuilder()
     private var assistantLineStart = -1
+    private var collapsedX: Int = -1
+    private var collapsedY: Int = -1
 
     private var pendingConfirmText: String? = null
     private var pendingConfirm: CompletableDeferred<OverlayDecision>? = null
@@ -151,14 +157,7 @@ class OverlayService : Service() {
 
     // ── Foreground notification ───────────────────────────────────────────────
 
-    private fun startInForeground() {
-        val mgr = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mgr.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Claw overlay", NotificationManager.IMPORTANCE_MIN)
-                    .apply { setShowBadge(false) },
-            )
-        }
+    private fun buildNotification(text: String): Notification {
         val stopPi = PendingIntent.getService(
             this, 0, Intent(this, OverlayService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
@@ -167,19 +166,33 @@ class OverlayService : Service() {
             this, 1, Intent(this, OverlayService::class.java).setAction(ACTION_SHOW),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val notif = Notification.Builder(this, CHANNEL_ID)
+        return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Claw is floating")
-            .setContentText("Tap to open the panel. Tap 'Stop' to close.")
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(showPi) // tap the notification body → re-open the panel
             .addAction(android.R.drawable.ic_menu_view, "Open", showPi)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPi)
             .setOngoing(true)
             .build()
+    }
+
+    private fun updateNotification(text: String) {
+        getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification(text))
+    }
+
+    private fun startInForeground() {
+        val mgr = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mgr.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Claw overlay", NotificationManager.IMPORTANCE_MIN)
+                    .apply { setShowBadge(false) },
+            )
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            startForeground(NOTIF_ID, buildNotification("Tap to open the panel."), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
-            startForeground(NOTIF_ID, notif)
+            startForeground(NOTIF_ID, buildNotification("Tap to open the panel."))
         }
     }
 
@@ -197,6 +210,7 @@ class OverlayService : Service() {
         gravity = Gravity.TOP or Gravity.START
         x = dp(280)
         y = dp(140)
+        softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
     }
 
     // ── Collapsed: floating joystick puck ─────────────────────────────────────
@@ -213,6 +227,9 @@ class OverlayService : Service() {
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         params.alpha = if (isAgentActive) 0.85f else 0.55f // see-through when idle
+
+        if (collapsedX >= 0) { params.x = collapsedX }
+        if (collapsedY >= 0) { params.y = collapsedY }
 
         val ringColor = if (isAgentActive) Color.parseColor("#FF7043") else Color.parseColor("#5C6BC0")
         val fillColor = if (isAgentActive) Color.parseColor("#33FF7043") else Color.parseColor("#33FFFFFF")
@@ -302,7 +319,7 @@ class OverlayService : Service() {
             )
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor("#C62828"), Color.parseColor("#E64A19")),
+                intArrayOf(Color.parseColor("#D2512A"), Color.parseColor("#7366BD")),
             ).apply {
                 cornerRadii = floatArrayOf(
                     dp(20).toFloat(), dp(20).toFloat(),
@@ -329,9 +346,11 @@ class OverlayService : Service() {
         statusDotView = dot
         val collapseBtn = TextView(this).apply {
             text = "▾"
-            textSize = 22f
+            textSize = 20f
             setTextColor(Color.parseColor("#FFCCBC"))
-            setPadding(dp(6), 0, dp(4), 0)
+            gravity = Gravity.CENTER
+            val sz = dp(48)
+            layoutParams = LinearLayout.LayoutParams(sz, sz)
             setOnClickListener { showCollapsed() }
         }
         attachDragAndTap(title, snapToEdge = false) { /* drag-only handle */ }
@@ -342,8 +361,10 @@ class OverlayService : Service() {
     }
 
     private fun buildTranscriptArea(): ScrollView {
+        val screenH = resources.displayMetrics.heightPixels
+        val transcriptH = (screenH * 0.28f).roundToInt().coerceIn(dp(120), dp(260))
         val tv = TextView(this).apply {
-            text = if (transcript.isEmpty()) "Ask Claw something…" else transcript.toString()
+            text = if (transcript.isEmpty()) "Ask Claw something…" else transcript
             textSize = 12.5f
             setTextColor(Color.parseColor("#2A2A35"))
             setPadding(dp(12), dp(8), dp(12), dp(8))
@@ -354,7 +375,7 @@ class OverlayService : Service() {
             setBackgroundColor(Color.parseColor("#FFFFFF"))
             addView(tv)
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(200),
+                LinearLayout.LayoutParams.MATCH_PARENT, transcriptH,
             )
         }.also { scrollView = it }
     }
@@ -498,7 +519,14 @@ class OverlayService : Service() {
         input.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) { doSend(); true } else false
         }
-        sendBtn.setOnClickListener { doSend() }
+        sendBtn.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> v.animate().alpha(0.55f).setDuration(60).start()
+                MotionEvent.ACTION_UP -> { v.animate().alpha(1f).setDuration(80).start(); doSend() }
+                MotionEvent.ACTION_CANCEL -> v.animate().alpha(1f).setDuration(80).start()
+            }
+            true
+        }
         row.addView(input)
         row.addView(sendBtn)
         return row
@@ -511,6 +539,13 @@ class OverlayService : Service() {
 
     private fun spacer(w: Int) = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(w, LinearLayout.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun trimTranscript() {
+        if (transcript.length > 5000) {
+            val keepFrom = transcript.indexOf('\n', 1500).takeIf { it >= 0 } ?: 1500
+            transcript.delete(0, keepFrom + 1)
+        }
     }
 
     // ── Turn handling ─────────────────────────────────────────────────────────
@@ -526,9 +561,10 @@ class OverlayService : Service() {
         pendingConfirm?.complete(OverlayDecision.Stop)
         pendingConfirm = null
         pendingConfirmText = null
-        appendLine("You: $text")
+        appendUserLine(text)
         assistantLineStart = -1
         isAgentActive = true
+        updateNotification("Working on: ${text.take(40)}…")
         if (!expanded) showExpanded() else updateActiveStatus()
         turnJob = agent.runTurn(text)
             .onEach { render(it) }
@@ -541,13 +577,26 @@ class OverlayService : Service() {
     private fun render(reply: OverlayReply) {
         when (reply) {
             is OverlayReply.TextDelta -> appendAssistant(reply.text)
-            is OverlayReply.ToolStatus -> appendLine(
-                when {
-                    reply.isError -> "⚠ ${reply.name} failed"
-                    reply.running -> "⚙ ${reply.name}…"
-                    else -> "✓ ${reply.name}"
-                },
-            )
+            is OverlayReply.ToolStatus -> {
+                if (reply.running) {
+                    statusDotView?.apply {
+                        text = "⚙ ${reply.name}…"
+                        setTextColor(Color.parseColor("#FFEB3B"))
+                    }
+                } else if (isAgentActive) {
+                    statusDotView?.apply {
+                        text = "● thinking…"
+                        setTextColor(Color.parseColor("#FFEB3B"))
+                    }
+                }
+                appendLine(
+                    when {
+                        reply.isError -> "⚠ ${reply.name} failed"
+                        reply.running -> "⚙ ${reply.name}…"
+                        else -> "✓ ${reply.name}"
+                    },
+                )
+            }
             OverlayReply.Done -> {
                 isAgentActive = false
                 // Task finished — auto-hide back to the small translucent puck so it
@@ -558,6 +607,7 @@ class OverlayService : Service() {
             is OverlayReply.Failed -> {
                 appendLine("⚠ ${reply.message}")
                 isAgentActive = false
+                updateNotification("Something went wrong — tap to open.")
                 // Keep the panel open on failure so the user sees what went wrong.
                 updateActiveStatus()
             }
@@ -570,6 +620,7 @@ class OverlayService : Service() {
             text = "● done"
             setTextColor(Color.parseColor("#2E7D32"))
         }
+        updateNotification("Tap to open the panel.")
         rootView?.postDelayed({
             // Don't hide if a new turn started or a confirmation is now pending.
             if (!isAgentActive && pendingConfirmText == null) showCollapsed()
@@ -590,7 +641,10 @@ class OverlayService : Service() {
 
     private fun beginAssistantLine() {
         if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
-        transcript.append("Claw: ")
+        val prefix = "Claw: "
+        val start = transcript.length
+        transcript.append(prefix)
+        transcript.setSpan(ForegroundColorSpan(Color.parseColor("#7C3E1A")), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         assistantLineStart = transcript.length
         flushTranscript()
     }
@@ -601,10 +655,24 @@ class OverlayService : Service() {
         flushTranscript()
     }
 
-    private fun appendLine(line: String) {
+    private fun appendLine(line: String, color: Int = Color.parseColor("#4A4A5A")) {
         if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
+        val start = transcript.length
         transcript.append(line).append('\n')
+        transcript.setSpan(ForegroundColorSpan(color), start, start + line.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         assistantLineStart = -1
+        trimTranscript()
+        flushTranscript()
+    }
+
+    private fun appendUserLine(text: String) {
+        if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
+        val prefix = "You: "
+        val start = transcript.length
+        transcript.append(prefix)
+        transcript.setSpan(ForegroundColorSpan(Color.parseColor("#3949AB")), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        transcript.append(text).append('\n')
+        trimTranscript()
         flushTranscript()
     }
 
@@ -647,15 +715,27 @@ class OverlayService : Service() {
                     if (abs(dx) > slop || abs(dy) > slop) dragged = true
                     // Move freely in BOTH axes — drop it anywhere on screen.
                     if (dragged) {
-                        params.x = (startX + dx).coerceAtLeast(0)
-                        params.y = (startY + dy).coerceAtLeast(0)
+                        val screenW = resources.displayMetrics.widthPixels
+                        val screenH = resources.displayMetrics.heightPixels
+                        val viewW = rootView?.width ?: 0
+                        val viewH = rootView?.height ?: 0
+                        params.x = (startX + dx).coerceIn(0, (screenW - viewW).coerceAtLeast(0))
+                        params.y = (startY + dy).coerceIn(0, (screenH - viewH).coerceAtLeast(0))
                         rootView?.let { windowManager.updateViewLayout(it, params) }
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!dragged) onTap()
-                    else if (snapToEdge) snapToNearestEdge(handle)
+                    if (!dragged) {
+                        if (snapToEdge) {
+                            collapsedX = params.x
+                            collapsedY = params.y
+                            handle.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        }
+                        onTap()
+                    } else if (snapToEdge) {
+                        snapToNearestEdge(handle)
+                    }
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> { dragged = false; true }
@@ -673,6 +753,7 @@ class OverlayService : Service() {
             duration = 180
             addUpdateListener { anim ->
                 params.x = anim.animatedValue as Int
+                collapsedX = params.x
                 rootView?.let { runCatching { windowManager.updateViewLayout(it, params) } }
             }
             start()

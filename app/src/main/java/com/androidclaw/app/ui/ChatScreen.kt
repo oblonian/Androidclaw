@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -88,6 +89,7 @@ fun ChatScreen(
     onToggleOverlay: () -> Unit,
     onOpenAccessibility: () -> Unit,
     isAccessibilityEnabled: () -> Boolean,
+    onSignOut: () -> Unit,
 ) {
     var showSettings by remember { mutableStateOf(vm.needsAuth) }
     var showPlaybook by remember { mutableStateOf(false) }
@@ -111,6 +113,7 @@ fun ChatScreen(
             onConnectAnthropicCode = { code -> vm.connectAnthropicOAuth(code) },
             onOpenAccessibility = onOpenAccessibility,
             isAccessibilityEnabled = isAccessibilityEnabled,
+            onSignOut = { showSettings = false; onSignOut() },
             onClose = {
                 showSettings = false
                 vm.refreshAuthState()
@@ -147,7 +150,12 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AndroidClaw") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🦞 ", style = MaterialTheme.typography.titleLarge)
+                        Text("AndroidClaw")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { showPlaybook = true }) {
                         Icon(Icons.Default.History, contentDescription = "Playbook & history")
@@ -194,7 +202,7 @@ fun ChatScreen(
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(vm.items) { item -> ChatBubble(item, copyToClipboard) }
+                    items(vm.items) { item -> ChatBubble(item, copyToClipboard) { vm.retryLastTurn() } }
                 }
             }
 
@@ -219,7 +227,7 @@ fun ChatScreen(
                     placeholder = { Text(if (vm.needsAuth) "Sign in or set an API key first" else "Ask AndroidClaw…") },
                     enabled = !vm.needsAuth && vm.pendingStep == null,
                     maxLines = 4,
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(16.dp),
                 )
                 Spacer(Modifier.size(8.dp))
                 if (vm.busy) {
@@ -285,8 +293,8 @@ private fun EmptyState(
             EXAMPLE_PROMPTS.forEach { prompt ->
                 AssistChip(
                     onClick = { onPick(prompt) },
-                    label = { Text(prompt) },
-                    modifier = Modifier.padding(vertical = 4.dp),
+                    label = { Text(prompt, maxLines = 2) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 )
             }
         }
@@ -295,7 +303,7 @@ private fun EmptyState(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatBubble(item: ChatItem, onCopy: (String) -> Unit) {
+private fun ChatBubble(item: ChatItem, onCopy: (String) -> Unit, onRetry: () -> Unit) {
     when (item) {
         is ChatItem.User -> Bubble(
             text = item.text,
@@ -328,20 +336,31 @@ private fun ChatBubble(item: ChatItem, onCopy: (String) -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (item.streaming) {
-                        if (item.text.isNotEmpty()) Spacer(Modifier.height(4.dp))
+                    // Show typing dots only while streaming with no text yet —
+                    // once tokens arrive the streaming text itself signals activity.
+                    if (item.streaming && item.text.isEmpty()) {
                         TypingIndicator()
                     }
                 }
             }
         }
         is ChatItem.ToolUse -> ToolChip(item)
-        is ChatItem.Error -> Bubble(
-            text = item.text,
-            alignEnd = false,
-            container = MaterialTheme.colorScheme.errorContainer,
-            textColor = MaterialTheme.colorScheme.onErrorContainer,
-        )
+        is ChatItem.Error -> Column(Modifier.padding(end = 40.dp)) {
+            Bubble(
+                text = item.text,
+                alignEnd = false,
+                container = MaterialTheme.colorScheme.errorContainer,
+                textColor = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier.padding(start = 4.dp),
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.size(4.dp))
+                Text("Retry", style = MaterialTheme.typography.labelMedium)
+            }
+        }
     }
 }
 

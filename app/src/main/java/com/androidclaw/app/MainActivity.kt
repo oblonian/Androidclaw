@@ -65,6 +65,10 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         },
                         isAccessibilityEnabled = { ClawAccessibilityService.isEnabled(this) },
+                        onSignOut = {
+                            vm.refreshAuthState()
+                            showSetup = !container.settings.isConfigured
+                        },
                     )
                 }
             }
