@@ -80,6 +80,11 @@ class OverlayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_SHOW -> {
+                if (!Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
+                showExpanded()
+                return START_STICKY
+            }
         }
         if (rootView == null) {
             if (!Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY }
@@ -157,10 +162,16 @@ class OverlayService : Service() {
             this, 0, Intent(this, OverlayService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val showPi = PendingIntent.getService(
+            this, 1, Intent(this, OverlayService::class.java).setAction(ACTION_SHOW),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         val notif = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Claw is floating")
-            .setContentText("Tap the 🦞 tab to open. Tap 'Stop' to close.")
+            .setContentText("Tap to open the panel. Tap 'Stop' to close.")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentIntent(showPi) // tap the notification body → re-open the panel
+            .addAction(android.R.drawable.ic_menu_view, "Open", showPi)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPi)
             .setOngoing(true)
             .build()
@@ -181,59 +192,49 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
         PixelFormat.TRANSLUCENT,
     ).apply {
-        gravity = Gravity.TOP or Gravity.END
-        x = 0
+        // TOP|START so x AND y are free — the puck can be dragged anywhere.
+        gravity = Gravity.TOP or Gravity.START
+        x = dp(280)
         y = dp(140)
     }
 
-    // ── Collapsed: edge tab ───────────────────────────────────────────────────
+    // ── Collapsed: floating joystick puck ─────────────────────────────────────
 
+    /**
+     * A small, translucent circular puck — the "gaming-console" controller.
+     * Drag it anywhere; tap to open the panel. Deliberately low-opacity so it
+     * barely covers what's underneath.
+     */
     private fun showCollapsed() {
         expanded = false
         statusDotView = null
         params.width = WindowManager.LayoutParams.WRAP_CONTENT
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        params.alpha = if (isAgentActive) 0.85f else 0.55f // see-through when idle
 
-        val topColor = if (isAgentActive) Color.parseColor("#FF6D00") else Color.parseColor("#D84315")
-        val botColor = if (isAgentActive) Color.parseColor("#E65100") else Color.parseColor("#BF360C")
+        val ringColor = if (isAgentActive) Color.parseColor("#FF7043") else Color.parseColor("#5C6BC0")
+        val fillColor = if (isAgentActive) Color.parseColor("#33FF7043") else Color.parseColor("#33FFFFFF")
 
-        val tab = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(10), dp(14), dp(10), dp(10))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(topColor, botColor),
-            ).apply {
-                cornerRadii = floatArrayOf(
-                    dp(18).toFloat(), dp(18).toFloat(), 0f, 0f,
-                    0f, 0f, dp(18).toFloat(), dp(18).toFloat(),
-                )
-            }
-            elevation = dp(10).toFloat()
-        }
-        tab.addView(TextView(this).apply {
+        val sz = dp(56)
+        val puck = TextView(this).apply {
             text = "🦞"
-            textSize = 24f
+            textSize = 22f
             gravity = Gravity.CENTER
-        })
-        tab.addView(TextView(this).apply {
-            text = if (isAgentActive) "BUSY" else "CLAW"
-            textSize = 8.5f
-            setTextColor(
-                if (isAgentActive) Color.parseColor("#FFE082") else Color.parseColor("#FFCCBC"),
-            )
-            letterSpacing = 0.08f
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-        })
+            layoutParams = LinearLayout.LayoutParams(sz, sz)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(fillColor)
+                setStroke(dp(2), ringColor)
+            }
+            elevation = dp(8).toFloat()
+        }
 
         if (isAgentActive) {
             fun doPulse() {
-                tab.animate().scaleX(1.12f).scaleY(1.12f).setDuration(650)
+                puck.animate().scaleX(1.14f).scaleY(1.14f).setDuration(620)
                     .withEndAction {
-                        tab.animate().scaleX(1f).scaleY(1f).setDuration(650)
+                        puck.animate().scaleX(1f).scaleY(1f).setDuration(620)
                             .withEndAction { if (isAgentActive && !expanded) doPulse() }
                             .start()
                     }.start()
@@ -241,8 +242,8 @@ class OverlayService : Service() {
             doPulse()
         }
 
-        attachDragAndTap(tab) { showExpanded() }
-        setRoot(tab)
+        attachDragAndTap(puck) { showExpanded() }
+        setRoot(puck)
     }
 
     // ── Expanded: dark chat card ──────────────────────────────────────────────
@@ -257,13 +258,16 @@ class OverlayService : Service() {
         // YouTube's (or whatever the target app is), breaking all screen reads.
         // The EditText uses a click listener to temporarily clear this flag when needed.
         params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        // Slightly see-through so it doesn't fully block the app behind it, but
+        // opaque enough that the text stays readable.
+        params.alpha = 0.96f
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#1C1B2E"))
+                setColor(Color.parseColor("#F4F5FB")) // light panel
                 cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), Color.parseColor("#3A3959"))
+                setStroke(dp(1), Color.parseColor("#D6D8E5"))
             }
             elevation = dp(20).toFloat()
             clipToOutline = true
@@ -334,13 +338,13 @@ class OverlayService : Service() {
         val tv = TextView(this).apply {
             text = if (transcript.isEmpty()) "Ask Claw something…" else transcript.toString()
             textSize = 12.5f
-            setTextColor(Color.parseColor("#CCC8E0"))
+            setTextColor(Color.parseColor("#2A2A35"))
             setPadding(dp(12), dp(8), dp(12), dp(8))
             setLineSpacing(dp(2).toFloat(), 1f)
         }
         transcriptView = tv
         return ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#0E0D1C"))
+            setBackgroundColor(Color.parseColor("#FFFFFF"))
             addView(tv)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(200),
@@ -356,20 +360,20 @@ class OverlayService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#251E00"))
+                setColor(Color.parseColor("#FFF6E0")) // soft amber on light theme
                 setStroke(dp(2), Color.parseColor("#FFA000"))
             }
         }
         panel.addView(TextView(this).apply {
             text = "🔔 Claw wants to:"
             textSize = 10.5f
-            setTextColor(Color.parseColor("#FFB300"))
+            setTextColor(Color.parseColor("#B26A00"))
             typeface = Typeface.DEFAULT_BOLD
         })
         panel.addView(TextView(this).apply {
             text = pending
             textSize = 13.5f
-            setTextColor(Color.parseColor("#FFE082"))
+            setTextColor(Color.parseColor("#5D3A00"))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(3), 0, dp(8))
         })
@@ -421,7 +425,7 @@ class OverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
             )
-            background = GradientDrawable().apply { setColor(Color.parseColor("#14132A")) }
+            background = GradientDrawable().apply { setColor(Color.parseColor("#ECEDF5")) }
         }
         val input = EditText(this).apply {
             hint = when {
@@ -429,14 +433,15 @@ class OverlayService : Service() {
                 pending != null -> "Tell Claw what to do instead…"
                 else -> "Ask Claw something…"
             }
-            setHintTextColor(Color.parseColor("#5C5A78"))
+            setHintTextColor(Color.parseColor("#9A9AAE"))
             textSize = 13f
-            setTextColor(Color.parseColor("#E6E1E5"))
+            setTextColor(Color.parseColor("#1E1E28"))
             isEnabled = OverlayBridge.agent != null
             maxLines = 3
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#2A2940"))
+                setColor(Color.parseColor("#FFFFFF"))
                 cornerRadius = dp(14).toFloat()
+                setStroke(dp(1), Color.parseColor("#D0D2E0"))
             }
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -494,7 +499,7 @@ class OverlayService : Service() {
 
     private fun divider() = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
-        setBackgroundColor(Color.parseColor("#2E2D4A"))
+        setBackgroundColor(Color.parseColor("#E0E2EC"))
     }
 
     private fun spacer(w: Int) = View(this).apply {
@@ -538,14 +543,30 @@ class OverlayService : Service() {
             )
             OverlayReply.Done -> {
                 isAgentActive = false
-                updateActiveStatus()
+                // Task finished — auto-hide back to the small translucent puck so it
+                // stops covering the screen. The transcript is kept; tapping the puck
+                // brings the full answer back.
+                autoHideAfterTask()
             }
             is OverlayReply.Failed -> {
                 appendLine("⚠ ${reply.message}")
                 isAgentActive = false
+                // Keep the panel open on failure so the user sees what went wrong.
                 updateActiveStatus()
             }
         }
+    }
+
+    /** Collapse to the puck shortly after a successful turn, unless a confirm is waiting. */
+    private fun autoHideAfterTask() {
+        statusDotView?.apply {
+            text = "● done"
+            setTextColor(Color.parseColor("#2E7D32"))
+        }
+        rootView?.postDelayed({
+            // Don't hide if a new turn started or a confirmation is now pending.
+            if (!isAgentActive && pendingConfirmText == null) showCollapsed()
+        }, 1400)
     }
 
     private fun updateActiveStatus() {
@@ -598,19 +619,28 @@ class OverlayService : Service() {
 
     private fun attachDragAndTap(handle: View, onTap: () -> Unit) {
         // Use the system touch slop: a hand-held tap easily wobbles past a few px,
-        // and a too-tight threshold makes taps register as drags (tab "ignores" taps).
+        // and a too-tight threshold makes taps register as drags (puck "ignores" taps).
         val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f
         var downY = 0f
+        var startX = 0
         var startY = 0
         var dragged = false
         handle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downY = event.rawY; startY = params.y; dragged = false; true }
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY
+                    startX = params.x; startY = params.y
+                    dragged = false
+                    true
+                }
                 MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - downX).roundToInt()
                     val dy = (event.rawY - downY).roundToInt()
-                    if (abs(dy) > slop) dragged = true
-                    // Only move the window once it's a real drag — otherwise taps jitter it.
+                    if (abs(dx) > slop || abs(dy) > slop) dragged = true
+                    // Move freely in BOTH axes — drop it anywhere on screen.
                     if (dragged) {
+                        params.x = (startX + dx).coerceAtLeast(0)
                         params.y = (startY + dy).coerceAtLeast(0)
                         rootView?.let { windowManager.updateViewLayout(it, params) }
                     }
@@ -629,6 +659,7 @@ class OverlayService : Service() {
         private const val CHANNEL_ID = "androidclaw_overlay"
         private const val NOTIF_ID = 0xC1A7
         const val ACTION_STOP = "com.androidclaw.overlay.STOP"
+        const val ACTION_SHOW = "com.androidclaw.overlay.SHOW"
 
         fun canDraw(context: Context): Boolean = Settings.canDrawOverlays(context)
 

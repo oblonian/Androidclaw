@@ -13,11 +13,29 @@ android {
         applicationId = "com.androidclaw.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // versionCode comes from CI (the GitHub run number) so each rolling build
+        // outranks the last; falls back to 1 for local builds.
+        versionCode = (project.findProperty("clawVersionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = "0.1." + ((project.findProperty("clawVersionCode") as String?) ?: "0")
+    }
+
+    signingConfigs {
+        // A FIXED debug keystore committed to the repo. Without this, every CI
+        // runner generates its own random debug.keystore, so each build is signed
+        // with a different key and Android refuses to update — forcing an uninstall.
+        // With one stable key, every rolling build installs straight over the last.
+        getByName("debug") {
+            storeFile = rootProject.file("claw-debug.keystore")
+            storePassword = "clawclaw"
+            keyAlias = "clawkey"
+            keyPassword = "clawclaw"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

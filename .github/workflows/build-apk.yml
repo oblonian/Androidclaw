@@ -25,7 +25,10 @@ jobs:
         run: ./gradlew :core-gateway:test
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+        # Run number → versionCode so each rolling build supersedes the previous;
+        # the committed keystore keeps the signature stable so it installs over the
+        # last build without an uninstall.
+        run: ./gradlew :app:assembleDebug -PclawVersionCode=${{ github.run_number }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
