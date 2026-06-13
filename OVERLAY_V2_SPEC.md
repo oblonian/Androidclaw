@@ -208,13 +208,90 @@ afterward (flag restored).
 
 ---
 
-## 6. Suggested sequencing
+## 6. BUG / FEATURE — Action-chain limit: silent fail + no continue
+
+**Current behaviour (Gateway.kt line 112):**
+```kotlin
+// After repeat(maxIterations = 8) exhausts:
+emit(AgentEvent.TurnFailed("Stopped after $maxIterations tool iterations"))
+```
+The loop is bounded at **8 tool iterations** per turn. When exhausted it emits
+`TurnFailed` — the same event used for network errors and LLM crashes. Both the
+in-app chat and the overlay render this identically: a red "⚠ Stopped after 8
+tool iterations" error chip. Three problems:
+
+1. **Misleading framing.** Reaching the limit is not a failure — the agent
+   completed as many steps as allowed and stopped safely. Treating it as
+   `TurnFailed` causes the overlay and app to show the error colour/icon, which
+   reads as "something broke" to the user.
+2. **No continue affordance.** The conversation history at that point is valid
+   and complete (all tool results are appended). The user can simply send a
+   follow-up ("continue") and the agent will pick up where it left off — but
+   there is no button to do this. The user doesn't know they *can* continue.
+3. **No visibility into progress.** There is no counter showing "3 / 8 actions
+   used" during execution. Long tasks feel unpredictable — the agent just
+   stops with no warning.
+
+**Fixes — three layers:**
+
+**6a. Distinguish limit-reached from real errors (Gateway + events)**
+
+- Add `AgentEvent.TurnLimitReached(messages: List<ChatMessage>)` (or reuse
+  `TurnComplete` with a new `limitReached: Boolean` flag). Do **not** emit
+  `TurnFailed` when the iteration cap is hit.
+- `OverlayReply` gets a corresponding `LimitReached` sealed subtype; same for
+  `ChatItem` in the app.
+- Both the overlay and the app render limit-reached as a neutral "reached 8
+  action limit" chip (no red, no ⚠), with a **"Continue ›"** button inline.
+
+**6b. Continue button**
+
+- Tapping "Continue ›" sends a canned follow-up: `"Continue from where you
+  left off."` using the existing conversation history (no messages are dropped).
+- `OverlayAgentImpl` and `ChatViewModel` both already support arbitrary
+  follow-up turns on the same history, so no gateway changes are needed beyond
+  6a — the continue button just calls `send("Continue from where you left off.")`.
+- The canned text should not appear in the transcript as a "You:" bubble — show
+  it as a system action chip ("↺ Continuing…") so it doesn't pollute the
+  conversation visually.
+
+**6c. Progress indicator during execution**
+
+- The overlay header's status dot (currently `"● thinking…"`) should show a
+  running count: `"⚙ 3 / 8"` while tool calls are in flight. Reset to
+  `"● ready"` on Done/LimitReached.
+- The app's `ChatViewModel` exposes `iterationCount` (increment on each
+  `ToolStarted`, reset on turn end); the in-app step bar already has space for
+  a small counter.
+
+**6d. Configurable limit (Settings)**
+
+- Add `maxIterations: Int` to `SettingsStore` (default 8, range 4–20, stored as
+  non-credential pref). Surface as a slider in the **Behaviour** section of
+  `SettingsScreen`.
+- `AppContainer.gateway()` reads this value when constructing `Gateway(...)`.
+- Warn in the UI if the user sets > 12: "Higher limits use more API credits per
+  task."
+
+**Scope guard:** the 8-action default stays. This spec does not change the
+*existence* of a cap — only the UX around hitting it.
+
+**Acceptance:** run a task that requires > 8 steps → the overlay shows "reached
+8 action limit" in a neutral chip with a "Continue ›" button → tapping it
+resumes seamlessly → the agent completes the task across multiple continues
+without losing context.
+
+---
+
+## 7. Suggested sequencing
 
 1. **§2 sessions persistence** and **§1 compact confirm** — these are bugs and
    the highest-value fixes.
-2. **§5 copy** — small, self-contained.
-3. **§3 window controls** — minimize/close are trivial; resize is the larger bit.
-4. **§4 customisation** — biggest surface; theme indirection first, then the
+2. **§6 action-chain limit** — straightforward event split + button; high
+   user-facing impact.
+3. **§5 copy** — small, self-contained.
+4. **§3 window controls** — minimize/close are trivial; resize is the larger bit.
+5. **§4 customisation** — biggest surface; theme indirection first, then the
    Settings UI, then stretch goals (image backgrounds).
 
 Each item above is independently shippable and preserves the four constraints in
