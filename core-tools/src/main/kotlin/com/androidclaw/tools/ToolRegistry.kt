@@ -18,6 +18,9 @@ class ToolRegistry {
     /** Permission tier of a registered tool, or null if unknown. */
     fun tierOf(name: String): PermissionTier? = tools[name]?.tier
 
+    /** Whether a call to [name] counts against the per-turn action budget. */
+    fun countsTowardLimit(name: String): Boolean = tools[name]?.countsTowardActionLimit ?: true
+
     suspend fun execute(call: ToolCall): ToolResult {
         val tool = tools[call.name]
             ?: return ToolResult.error("Unknown tool: ${call.name}")

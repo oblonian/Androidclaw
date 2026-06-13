@@ -9,7 +9,8 @@ sealed interface AgentEvent {
     data class TextDelta(val text: String) : AgentEvent
     data class ToolStarted(val call: ToolCall) : AgentEvent
     data class ToolFinished(val call: ToolCall, val result: ToolResult) : AgentEvent
-    /** Emitted at the start of each tool-use iteration (1-based). */
+    /** Progress of the per-turn action budget. [current] is actions taken so far
+     *  (perception like read_screen is exempt); [max] is the budget. */
     data class IterationUpdate(val current: Int, val max: Int) : AgentEvent
     /** Terminal: full wire-format conversation including this turn. */
     data class TurnComplete(val messages: List<ChatMessage>) : AgentEvent

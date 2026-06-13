@@ -248,7 +248,7 @@ fun SettingsScreen(
                         Column(Modifier.weight(1f)) {
                             Text("Max actions per turn", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Agent stops and offers Continue after this many steps",
+                                "Taps, typing and app launches per turn. Reading the screen is free.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                             )

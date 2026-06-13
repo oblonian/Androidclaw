@@ -34,8 +34,13 @@ class Gateway(
         val messages = history.toMutableList()
         val schemas = tools.schemas()
 
-        repeat(maxIterations) { iteration ->
-            emit(AgentEvent.IterationUpdate(iteration + 1, maxIterations))
+        // [maxIterations] is the user-facing *action* budget. Perception
+        // (read_screen) is free, so we also keep a hard ceiling on total
+        // round-trips to guarantee termination if the agent only ever reads.
+        var actions = 0
+        val hardCap = maxIterations * 3
+
+        repeat(hardCap) {
             var stopReason = StopReason.OTHER
             val text = StringBuilder()
             val toolCalls = mutableListOf<ToolCall>()
@@ -86,6 +91,8 @@ class Gateway(
                 val result = when (decision) {
                     ConfirmDecision.Proceed -> {
                         emit(AgentEvent.ToolStarted(call))
+                        // Count the action before running it (perception is exempt).
+                        if (tools.countsTowardLimit(call.name)) actions++
                         // A buggy tool must not abort the turn (or crash the collector) —
                         // surface the failure to the model as an error result instead.
                         runCatching { tools.execute(call) }
@@ -108,8 +115,15 @@ class Gateway(
                 results += ContentBlock.ToolResult(call.id, result.content, result.isError)
             }
             messages += ChatMessage(Role.USER, results)
+
+            if (actions > 0) emit(AgentEvent.IterationUpdate(actions, maxIterations))
+            if (actions >= maxIterations) {
+                emit(AgentEvent.TurnLimitReached(messages, maxIterations))
+                return@flow
+            }
         }
 
+        // Reached the hard round-trip ceiling (e.g. an all-perception loop).
         emit(AgentEvent.TurnLimitReached(messages, maxIterations))
     }
 

@@ -38,6 +38,13 @@ private class EchoTool : Tool {
     override suspend fun execute(args: JsonObject) = ToolResult("echoed")
 }
 
+/** A read-only tool that is exempt from the action budget (like read_screen). */
+private class PeekTool : Tool {
+    override val countsTowardActionLimit = false
+    override val schema = ToolSchema("peek", "Reads state", buildJsonObject { put("type", "object") })
+    override suspend fun execute(args: JsonObject) = ToolResult("peeked")
+}
+
 /** A CONFIRM-tier tool that records whether it actually ran. */
 private class GuardedTool : Tool {
     var ran = false
@@ -190,5 +197,26 @@ class GatewayTest {
         assertEquals(3, provider.calls)
         val limitEvent = events.last() as AgentEvent.TurnLimitReached
         assertEquals(3, limitEvent.max)
+    }
+
+    @Test
+    fun `read-only tools do not consume the action budget`() = runTest {
+        val peek = ToolCall("p1", "peek", JsonObject(emptyMap()))
+        // Five perception calls then a final text answer — more than maxIterations=3,
+        // yet the turn must complete normally because peek is exempt.
+        val provider = FakeProvider(
+            List(5) { listOf<LlmEvent>(LlmEvent.ToolCallReady(peek), LlmEvent.Completed(StopReason.TOOL_USE)) } +
+                listOf(listOf(LlmEvent.TextDelta("answer"), LlmEvent.Completed(StopReason.END_TURN))),
+        )
+        val registry = ToolRegistry().apply { register(PeekTool()) }
+        val gateway = Gateway(provider, registry, "sys", maxIterations = 3)
+
+        val events = gateway.runTurn(history).toList()
+
+        assertEquals(6, provider.calls)
+        assertTrue(events.last() is AgentEvent.TurnComplete)
+        assertTrue(events.none { it is AgentEvent.TurnLimitReached })
+        // Exempt tools never emit a budget update.
+        assertTrue(events.none { it is AgentEvent.IterationUpdate })
     }
 }

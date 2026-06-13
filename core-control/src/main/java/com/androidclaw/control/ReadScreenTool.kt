@@ -18,6 +18,10 @@ class ReadScreenTool : Tool {
 
     override val tier = PermissionTier.AUTO
 
+    // Reading the screen is free perception — it must not consume the action
+    // budget, or a tap-then-read loop would burn through it twice as fast.
+    override val countsTowardActionLimit = false
+
     override val schema = ToolSchema(
         name = "read_screen",
         description = "Read the current screen of the foreground app as a compact list of UI " +

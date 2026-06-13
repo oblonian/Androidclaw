@@ -20,5 +20,13 @@ interface Tool {
     val schema: ToolSchema
     val tier: PermissionTier get() = PermissionTier.AUTO
 
+    /**
+     * Whether a call to this tool counts against the per-turn action budget
+     * (SPEC §4). Pure on-device perception (e.g. read_screen) is free so the
+     * agent can look between every action without exhausting the budget;
+     * state-changing or billable tools count.
+     */
+    val countsTowardActionLimit: Boolean get() = true
+
     suspend fun execute(args: JsonObject): ToolResult
 }
