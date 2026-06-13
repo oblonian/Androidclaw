@@ -2,6 +2,7 @@ package com.androidclaw.tools
 
 import com.androidclaw.llm.ToolCall
 import com.androidclaw.llm.ToolSchema
+import kotlinx.coroutines.CancellationException
 
 class ToolRegistry {
     private val tools = LinkedHashMap<String, Tool>()
@@ -25,6 +26,10 @@ class ToolRegistry {
         }
         return try {
             tool.execute(call.input)
+        } catch (e: CancellationException) {
+            // Never swallow cancellation — it must propagate so a stopped turn
+            // actually aborts the in-flight tool instead of continuing the loop.
+            throw e
         } catch (e: Exception) {
             ToolResult.error("Tool '${call.name}' failed: ${e.message}")
         }

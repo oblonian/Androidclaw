@@ -18,7 +18,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -93,7 +92,9 @@ class OpenAiCompatProvider(
                     }
                     delta["tool_calls"]?.jsonArray?.forEach { element ->
                         val call = element.jsonObject
-                        val index = call["index"]?.jsonPrimitive?.int ?: 0
+                        // Defensive parse: a non-integer index would throw inside this SSE
+                        // callback, escape onEvent, and hang the flow (no terminal event).
+                        val index = call["index"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
                         val pending = calls.getOrPut(index) { PendingCall() }
                         call["id"]?.jsonPrimitive?.content?.let { pending.id = it }
                         call["function"]?.jsonObject?.let { fn ->

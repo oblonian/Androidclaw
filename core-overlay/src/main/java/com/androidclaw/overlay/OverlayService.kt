@@ -769,7 +769,11 @@ class OverlayService : Service() {
             }
             OverlayReply.Done -> {
                 isAgentActive = false
-                isGhosted = false
+                if (isGhosted) {
+                    isGhosted = false
+                    params.alpha = 0.96f
+                    rootView?.let { runCatching { windowManager.updateViewLayout(it, params) } }
+                }
                 autoHideAfterTask()
             }
             is OverlayReply.LimitReached -> {

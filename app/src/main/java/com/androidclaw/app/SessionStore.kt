@@ -18,17 +18,30 @@ data class SavedSession(
     val messages: List<SavedMessage>,
 )
 
-/** Persists up to 25 conversation sessions in the app's private files directory. */
+/**
+ * Persists up to 25 conversation sessions in the app's private files directory.
+ *
+ * Two writers share one instance — the in-app chat and the floating overlay —
+ * so every read-modify-write is [Synchronized] and writes are atomic
+ * (temp file + rename) to avoid lost updates or a torn JSON file.
+ */
 class SessionStore(context: Context) {
 
     private val file = File(context.filesDir, "claw_sessions.json")
     private val json = Json { ignoreUnknownKeys = true }
 
+    @Synchronized
     fun loadAll(): List<SavedSession> = runCatching {
         json.decodeFromString<List<SavedSession>>(file.readText())
     }.getOrDefault(emptyList())
 
-    fun save(items: List<ChatItem>) {
+    /**
+     * Persists [items] as a single session, updating the row with [existingId]
+     * in place when supplied (so a multi-turn conversation stays one entry).
+     * Returns the session id to reuse on the next turn.
+     */
+    @Synchronized
+    fun save(items: List<ChatItem>, existingId: String? = null): String? {
         val messages = items.mapNotNull { item ->
             when (item) {
                 is ChatItem.User -> SavedMessage("user", item.text)
@@ -37,15 +50,16 @@ class SessionStore(context: Context) {
                 else -> null
             }
         }
-        if (messages.isEmpty()) return
-        val rawTitle = messages.firstOrNull { it.role == "user" }?.text ?: return
+        if (messages.isEmpty()) return existingId
+        val rawTitle = messages.firstOrNull { it.role == "user" }?.text ?: return existingId
         val title = if (rawTitle.length > 55) "${rawTitle.take(52).trimEnd()}…" else rawTitle
-        val session = SavedSession(title = title, messages = messages)
-        val updated = (listOf(session) + loadAll()).take(25)
-        runCatching { file.writeText(json.encodeToString(updated)) }
+        val session = SavedSession(id = existingId ?: UUID.randomUUID().toString(), title = title, messages = messages)
+        upsert(session)
+        return session.id
     }
 
     /** Update an existing session in-place, or prepend it as new if not found. */
+    @Synchronized
     fun upsert(session: SavedSession) {
         val existing = loadAll()
         val updated = if (existing.any { it.id == session.id }) {
@@ -53,11 +67,23 @@ class SessionStore(context: Context) {
         } else {
             (listOf(session) + existing).take(25)
         }
-        runCatching { file.writeText(json.encodeToString(updated)) }
+        writeAtomically(updated)
     }
 
+    @Synchronized
     fun delete(id: String) {
-        val updated = loadAll().filter { it.id != id }
-        runCatching { file.writeText(json.encodeToString(updated)) }
+        writeAtomically(loadAll().filter { it.id != id })
+    }
+
+    private fun writeAtomically(sessions: List<SavedSession>) {
+        runCatching {
+            val tmp = File(file.parentFile, "${file.name}.tmp")
+            tmp.writeText(json.encodeToString(sessions))
+            if (!tmp.renameTo(file)) {
+                // renameTo can fail across some filesystems — fall back to a direct write.
+                file.writeText(json.encodeToString(sessions))
+                tmp.delete()
+            }
+        }
     }
 }

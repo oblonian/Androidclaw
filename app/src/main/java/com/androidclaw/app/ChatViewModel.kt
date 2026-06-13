@@ -48,6 +48,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Wire-format history owned here; the gateway is stateless (SPEC §4). */
     private var conversation: List<ChatMessage> = emptyList()
+    /** Stable id for the current conversation so multi-turn chats stay one history entry. */
+    private var currentSessionId: String? = null
     private var turnJob: Job? = null
     private var pendingDecision: CompletableDeferred<ConfirmDecision>? = null
 
@@ -115,7 +117,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                         finishStreamingBubble()
                         busy = false
                         iterationCount = 0
-                        container.sessionStore.save(items)
+                        currentSessionId = container.sessionStore.save(items, currentSessionId)
                         sessions = container.sessionStore.loadAll()
                     }
                     is AgentEvent.TurnLimitReached -> {
@@ -124,7 +126,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                         items = items + ChatItem.LimitReached(event.max)
                         busy = false
                         iterationCount = 0
-                        container.sessionStore.save(items)
+                        currentSessionId = container.sessionStore.save(items, currentSessionId)
                         sessions = container.sessionStore.loadAll()
                     }
                     is AgentEvent.TurnFailed -> {
@@ -179,6 +181,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
 
     fun loadSession(session: SavedSession) {
         cancelTurn()
+        currentSessionId = session.id
         items = session.messages.map { msg ->
             if (msg.role == "user") ChatItem.User(msg.text)
             else ChatItem.Assistant(msg.text, streaming = false)
@@ -221,6 +224,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         cancelTurn()
         conversation = emptyList()
         items = emptyList()
+        currentSessionId = null
     }
 
     private fun appendAssistantText(delta: String) {

@@ -17,12 +17,25 @@ class SettingsStore(context: Context) {
     private val prefs: SharedPreferences
 
     init {
+        prefs = runCatching { createPrefs(context) }.getOrElse {
+            // A corrupted keystore key (after a device restore / key invalidation) makes
+            // create() throw on every launch. Drop the unreadable prefs and start fresh
+            // rather than bricking the app — the user re-enters credentials once.
+            runCatching {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+                context.deleteSharedPreferences(PREFS_NAME)
+            }
+            createPrefs(context)
+        }
+    }
+
+    private fun createPrefs(context: Context): SharedPreferences {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        prefs = EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             context,
-            "androidclaw_settings",
+            PREFS_NAME,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
@@ -127,6 +140,7 @@ class SettingsStore(context: Context) {
         }
 
     companion object {
+        private const val PREFS_NAME = "androidclaw_settings"
         private const val KEY_BACKEND = "backend"
         private const val KEY_ANTHROPIC_KEY = "anthropic_api_key"
         private const val KEY_ANTHROPIC_MODEL = "model"
