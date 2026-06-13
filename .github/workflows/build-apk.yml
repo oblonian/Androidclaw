@@ -41,7 +41,38 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Generate one-click install scripts that flag the app as Play-Store-origin.
+          # This bypasses Android 13+ "Restricted settings" — without it, sideloaded apps
+          # can't enable Accessibility Service through the normal Settings UI.
+          cat > install.sh << 'EOF'
+          #!/bin/bash
+          # AndroidClaw — first-time or update install
+          # Sets Google Play as the installer so Android 13+ doesn't flag the app
+          # as "Restricted setting", allowing Accessibility Service to be enabled.
+          echo "Installing AndroidClaw..."
+          adb install -r -i com.android.vending app-debug.apk && \
+            echo "Done! Open AndroidClaw and complete setup." || \
+            echo "FAILED — make sure USB debugging is on and the phone is connected."
+          EOF
+          chmod +x install.sh
+
+          cat > install.bat << 'EOF'
+          @echo off
+          echo Installing AndroidClaw...
+          adb install -r -i com.android.vending app-debug.apk
+          if %ERRORLEVEL% EQU 0 (
+            echo Done! Open AndroidClaw and complete setup.
+          ) else (
+            echo FAILED -- make sure USB debugging is on and the phone is connected.
+          )
+          pause
+          EOF
+
           gh release create latest --prerelease \
             --title "AndroidClaw latest debug build" \
-            --notes "Rolling debug build from CI. Install on Android 10+." || true
-          gh release upload latest app/build/outputs/apk/debug/app-debug.apk --clobber
+            --notes "Rolling debug build from CI. Install on Android 10+. Run install.sh (Mac/Linux) or install.bat (Windows) to bypass Android 13 Restricted Settings." || true
+          gh release upload latest \
+            app/build/outputs/apk/debug/app-debug.apk \
+            install.sh \
+            install.bat \
+            --clobber

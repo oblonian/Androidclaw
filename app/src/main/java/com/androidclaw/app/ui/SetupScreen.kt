@@ -40,8 +40,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -290,6 +292,12 @@ fun SetupScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                     )
+                    // Android 13+ blocks accessibility for sideloaded APKs with a
+                    // "Restricted setting" error. A one-time ADB command clears it.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Spacer(Modifier.height(8.dp))
+                        RestrictedSettingsHint()
+                    }
                 }
             }
 
@@ -317,6 +325,47 @@ fun SetupScreen(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun RestrictedSettingsHint() {
+    val clipboard = LocalClipboardManager.current
+    val cmd = "adb shell cmd appops set com.androidclaw.app ACCESS_RESTRICTED_SETTINGS allow"
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "Seeing \"Restricted setting\"?",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Text(
+                "Run this once on your PC with USB debugging on:",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    cmd,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { clipboard.setText(AnnotatedString(cmd)) }) {
+                    Text("Copy")
+                }
+            }
+            Text(
+                "Or use install.sh / install.bat from the GitHub release — they handle this automatically.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
         }
     }
 }
