@@ -1,5 +1,6 @@
 package com.androidclaw.overlay
 
+import android.animation.ValueAnimator
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -242,7 +243,7 @@ class OverlayService : Service() {
             doPulse()
         }
 
-        attachDragAndTap(puck) { showExpanded() }
+        attachDragAndTap(puck, snapToEdge = true) { showExpanded() }
         setRoot(puck)
     }
 
@@ -283,6 +284,12 @@ class OverlayService : Service() {
         card.addView(buildInputRow(pending))
 
         setRoot(card)
+
+        // Subtle entrance: fade + scale up so the panel "pops" rather than snapping in.
+        card.alpha = 0f
+        card.scaleX = 0.96f
+        card.scaleY = 0.96f
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140).start()
     }
 
     private fun buildHeader(): LinearLayout {
@@ -327,7 +334,7 @@ class OverlayService : Service() {
             setPadding(dp(6), 0, dp(4), 0)
             setOnClickListener { showCollapsed() }
         }
-        attachDragAndTap(title) { /* drag-only handle */ }
+        attachDragAndTap(title, snapToEdge = false) { /* drag-only handle */ }
         header.addView(title)
         header.addView(dot)
         header.addView(collapseBtn)
@@ -617,7 +624,7 @@ class OverlayService : Service() {
         else windowManager.updateViewLayout(container, params)
     }
 
-    private fun attachDragAndTap(handle: View, onTap: () -> Unit) {
+    private fun attachDragAndTap(handle: View, snapToEdge: Boolean, onTap: () -> Unit) {
         // Use the system touch slop: a hand-held tap easily wobbles past a few px,
         // and a too-tight threshold makes taps register as drags (puck "ignores" taps).
         val slop = ViewConfiguration.get(this).scaledTouchSlop
@@ -646,10 +653,29 @@ class OverlayService : Service() {
                     }
                     true
                 }
-                MotionEvent.ACTION_UP -> { if (!dragged) onTap(); true }
+                MotionEvent.ACTION_UP -> {
+                    if (!dragged) onTap()
+                    else if (snapToEdge) snapToNearestEdge(handle)
+                    true
+                }
                 MotionEvent.ACTION_CANCEL -> { dragged = false; true }
                 else -> false
             }
+        }
+    }
+
+    /** Glide the puck to whichever vertical screen edge is closer, like a chat-bubble. */
+    private fun snapToNearestEdge(view: View) {
+        val screenW = resources.displayMetrics.widthPixels
+        val viewW = view.width.takeIf { it > 0 } ?: dp(56)
+        val targetX = if (params.x + viewW / 2 < screenW / 2) 0 else screenW - viewW
+        ValueAnimator.ofInt(params.x, targetX).apply {
+            duration = 180
+            addUpdateListener { anim ->
+                params.x = anim.animatedValue as Int
+                rootView?.let { runCatching { windowManager.updateViewLayout(it, params) } }
+            }
+            start()
         }
     }
 

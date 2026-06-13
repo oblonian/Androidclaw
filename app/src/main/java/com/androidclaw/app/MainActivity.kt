@@ -11,11 +11,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.androidclaw.control.ClawAccessibilityService
 import com.androidclaw.overlay.OverlayService
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -25,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.androidclaw.app.ui.ChatScreen
 import com.androidclaw.app.ui.SetupScreen
+import com.androidclaw.app.ui.theme.ClawTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -118,10 +114,4 @@ class ChatViewModelFactory(private val container: AppContainer) : ViewModelProvi
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ChatViewModel(container) as T
-}
-
-@Composable
-fun ClawTheme(content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
-    MaterialTheme(colorScheme = colors, content = content)
 }

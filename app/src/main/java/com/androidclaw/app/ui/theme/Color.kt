@@ -1,0 +1,61 @@
+package com.androidclaw.app.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+// ── Brand seeds ───────────────────────────────────────────────────────────────
+// Coral (the lobster) + indigo, kept in lock-step with the floating overlay so
+// the app and the overlay read as one product.
+val ClawCoral = Color(0xFFD2512A)
+val ClawCoralLight = Color(0xFFFFB59B)
+val ClawIndigo = Color(0xFF5560B0)
+val ClawIndigoLight = Color(0xFFBEC2FF)
+
+// ── Light scheme ──────────────────────────────────────────────────────────────
+val LightPrimary = Color(0xFFD2512A)
+val LightOnPrimary = Color(0xFFFFFFFF)
+val LightPrimaryContainer = Color(0xFFFFDBCF)
+val LightOnPrimaryContainer = Color(0xFF3B0A00)
+val LightSecondary = Color(0xFF5560B0)
+val LightOnSecondary = Color(0xFFFFFFFF)
+val LightSecondaryContainer = Color(0xFFDFE0FF)
+val LightOnSecondaryContainer = Color(0xFF111356)
+val LightTertiary = Color(0xFF8C5000)
+val LightOnTertiary = Color(0xFFFFFFFF)
+val LightTertiaryContainer = Color(0xFFFFDDB5)
+val LightOnTertiaryContainer = Color(0xFF2C1600)
+val LightBackground = Color(0xFFFFF8F6)
+val LightOnBackground = Color(0xFF231917)
+val LightSurface = Color(0xFFFFF8F6)
+val LightOnSurface = Color(0xFF231917)
+val LightSurfaceVariant = Color(0xFFF5DED7)
+val LightOnSurfaceVariant = Color(0xFF53433F)
+val LightOutline = Color(0xFF85736E)
+val LightError = Color(0xFFBA1A1A)
+val LightOnError = Color(0xFFFFFFFF)
+val LightErrorContainer = Color(0xFFFFDAD6)
+val LightOnErrorContainer = Color(0xFF410002)
+
+// ── Dark scheme ───────────────────────────────────────────────────────────────
+val DarkPrimary = Color(0xFFFFB59B)
+val DarkOnPrimary = Color(0xFF5B1B04)
+val DarkPrimaryContainer = Color(0xFF7A2E15)
+val DarkOnPrimaryContainer = Color(0xFFFFDBCF)
+val DarkSecondary = Color(0xFFBEC2FF)
+val DarkOnSecondary = Color(0xFF252A78)
+val DarkSecondaryContainer = Color(0xFF3C4490)
+val DarkOnSecondaryContainer = Color(0xFFDFE0FF)
+val DarkTertiary = Color(0xFFFFB871)
+val DarkOnTertiary = Color(0xFF4A2800)
+val DarkTertiaryContainer = Color(0xFF6A3C00)
+val DarkOnTertiaryContainer = Color(0xFFFFDDB5)
+val DarkBackground = Color(0xFF1A110F)
+val DarkOnBackground = Color(0xFFF1DFDA)
+val DarkSurface = Color(0xFF1A110F)
+val DarkOnSurface = Color(0xFFF1DFDA)
+val DarkSurfaceVariant = Color(0xFF53433F)
+val DarkOnSurfaceVariant = Color(0xFFD8C2BB)
+val DarkOutline = Color(0xFFA08D87)
+val DarkError = Color(0xFFFFB4AB)
+val DarkOnError = Color(0xFF690005)
+val DarkErrorContainer = Color(0xFF93000A)
+val DarkOnErrorContainer = Color(0xFFFFDAD6)
