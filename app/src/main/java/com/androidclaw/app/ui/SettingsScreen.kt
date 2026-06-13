@@ -24,9 +24,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +60,7 @@ fun SettingsScreen(
     var anthropicModel by remember { mutableStateOf(settings.anthropicModel) }
     var openRouterModel by remember { mutableStateOf(settings.openRouterModel) }
     var stepThrough by remember { mutableStateOf(settings.stepThrough) }
+    var maxIterations by remember { mutableStateOf(settings.maxIterations) }
     val openRouterConnected = settings.openRouterKey != null
 
     var anthropicUseOAuth by remember { mutableStateOf(settings.anthropicUseOAuth) }
@@ -73,6 +76,7 @@ fun SettingsScreen(
         settings.openRouterModel = openRouterModel
         settings.anthropicUseOAuth = anthropicUseOAuth
         settings.stepThrough = stepThrough
+        settings.maxIterations = maxIterations
     }
 
     Scaffold(
@@ -238,6 +242,37 @@ fun SettingsScreen(
                         )
                     }
                     Switch(checked = stepThrough, onCheckedChange = { stepThrough = it })
+                }
+                Column {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Max actions per turn", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Agent stops and offers Continue after this many steps",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                        }
+                        Text(
+                            "$maxIterations",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Slider(
+                        value = maxIterations.toFloat(),
+                        onValueChange = { maxIterations = it.roundToInt() },
+                        valueRange = 4f..20f,
+                        steps = 15,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (maxIterations > 12) {
+                        Text(
+                            "Higher limits use more API credits per task",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
 

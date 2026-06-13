@@ -94,6 +94,19 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_STEP_THROUGH, "true").toBoolean()
         set(value) = prefs.edit { putString(KEY_STEP_THROUGH, value.toString()) }
 
+    /** Max tool iterations per turn before the agent stops and offers "Continue". */
+    var maxIterations: Int
+        get() = prefs.getString(KEY_MAX_ITERATIONS, "8")?.toIntOrNull()?.coerceIn(4, 20) ?: 8
+        set(value) = prefs.edit { putString(KEY_MAX_ITERATIONS, value.coerceIn(4, 20).toString()) }
+
+    /** Overlay puck position — persisted so it survives service restarts. */
+    var overlayPuckX: Int
+        get() = prefs.getString(KEY_OVERLAY_PUCK_X, "-1")?.toIntOrNull() ?: -1
+        set(value) = prefs.edit { putString(KEY_OVERLAY_PUCK_X, value.toString()) }
+    var overlayPuckY: Int
+        get() = prefs.getString(KEY_OVERLAY_PUCK_Y, "-1")?.toIntOrNull() ?: -1
+        set(value) = prefs.edit { putString(KEY_OVERLAY_PUCK_Y, value.toString()) }
+
     /** Clears all stored credentials. The backend preference is kept so the sign-in screen
      *  pre-selects the last-used provider. */
     fun signOut() {
@@ -127,6 +140,9 @@ class SettingsStore(context: Context) {
         private const val KEY_ANTHROPIC_PKCE_VERIFIER = "anthropic_pkce_verifier"
         private const val KEY_ANTHROPIC_PKCE_STATE = "anthropic_pkce_state"
         private const val KEY_STEP_THROUGH = "step_through"
+        private const val KEY_MAX_ITERATIONS = "max_iterations"
+        private const val KEY_OVERLAY_PUCK_X = "overlay_puck_x"
+        private const val KEY_OVERLAY_PUCK_Y = "overlay_puck_y"
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
         const val DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6"
     }

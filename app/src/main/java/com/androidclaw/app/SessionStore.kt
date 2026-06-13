@@ -45,6 +45,17 @@ class SessionStore(context: Context) {
         runCatching { file.writeText(json.encodeToString(updated)) }
     }
 
+    /** Update an existing session in-place, or prepend it as new if not found. */
+    fun upsert(session: SavedSession) {
+        val existing = loadAll()
+        val updated = if (existing.any { it.id == session.id }) {
+            existing.map { if (it.id == session.id) session else it }
+        } else {
+            (listOf(session) + existing).take(25)
+        }
+        runCatching { file.writeText(json.encodeToString(updated)) }
+    }
+
     fun delete(id: String) {
         val updated = loadAll().filter { it.id != id }
         runCatching { file.writeText(json.encodeToString(updated)) }

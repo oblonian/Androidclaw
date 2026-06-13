@@ -34,7 +34,8 @@ class Gateway(
         val messages = history.toMutableList()
         val schemas = tools.schemas()
 
-        repeat(maxIterations) {
+        repeat(maxIterations) { iteration ->
+            emit(AgentEvent.IterationUpdate(iteration + 1, maxIterations))
             var stopReason = StopReason.OTHER
             val text = StringBuilder()
             val toolCalls = mutableListOf<ToolCall>()
@@ -109,7 +110,7 @@ class Gateway(
             messages += ChatMessage(Role.USER, results)
         }
 
-        emit(AgentEvent.TurnFailed("Stopped after $maxIterations tool iterations"))
+        emit(AgentEvent.TurnLimitReached(messages, maxIterations))
     }
 
     private fun assistantMessage(text: String, calls: List<ToolCall>): ChatMessage {

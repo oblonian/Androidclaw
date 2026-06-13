@@ -25,6 +25,8 @@ sealed interface ChatItem {
     data class Assistant(val text: String, val streaming: Boolean) : ChatItem
     data class ToolUse(val name: String, val running: Boolean, val isError: Boolean) : ChatItem
     data class Error(val text: String) : ChatItem
+    /** The per-turn action cap was hit; the user can continue without losing context. */
+    data class LimitReached(val max: Int) : ChatItem
 }
 
 class ChatViewModel(private val container: AppContainer) : ViewModel() {
@@ -36,6 +38,8 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
     var needsAuth by mutableStateOf(!container.settings.isConfigured)
         private set
     var sessions by mutableStateOf(container.sessionStore.loadAll())
+        private set
+    var iterationCount by mutableStateOf(0)
         private set
 
     /** Non-null while a device action is awaiting the user's step-through verdict. */
@@ -79,7 +83,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         AnthropicAuth.exchangeCode(container.http, container.settings, code)
             .also { refreshAuthState() }
 
-    fun send(text: String) {
+    fun send(text: String, silent: Boolean = false) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || busy) return
         val gateway = container.gateway(confirmer) ?: run {
@@ -87,8 +91,9 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
 
-        items = items + ChatItem.User(trimmed)
+        if (!silent) items = items + ChatItem.User(trimmed)
         busy = true
+        iterationCount = 0
         val history = conversation + ChatMessage.user(trimmed)
 
         turnJob = viewModelScope.launch {
@@ -104,10 +109,21 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                             it.copy(running = false, isError = event.result.isError)
                         }
                     }
+                    is AgentEvent.IterationUpdate -> iterationCount = event.current
                     is AgentEvent.TurnComplete -> {
                         conversation = event.messages
                         finishStreamingBubble()
                         busy = false
+                        iterationCount = 0
+                        container.sessionStore.save(items)
+                        sessions = container.sessionStore.loadAll()
+                    }
+                    is AgentEvent.TurnLimitReached -> {
+                        conversation = event.messages
+                        finishStreamingBubble()
+                        items = items + ChatItem.LimitReached(event.max)
+                        busy = false
+                        iterationCount = 0
                         container.sessionStore.save(items)
                         sessions = container.sessionStore.loadAll()
                     }
@@ -115,10 +131,19 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
                         finishStreamingBubble()
                         items = items + ChatItem.Error(event.message)
                         busy = false
+                        iterationCount = 0
                     }
                 }
             }
         }
+    }
+
+    /** Re-runs from the last limit-reached point without adding a visible user bubble. */
+    fun continueTurn() {
+        if (busy) return
+        val lastLimitIdx = items.indexOfLast { it is ChatItem.LimitReached }
+        if (lastLimitIdx >= 0) items = items.take(lastLimitIdx)
+        send("Continue from where you left off.", silent = true)
     }
 
     // ── Step-through controls (the "game controller") ─────────────────────────
@@ -177,6 +202,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
         pendingDecision = null
         finishStreamingBubble()
         busy = false
+        iterationCount = 0
     }
 
     /** Re-sends the last user message, stripping the failed response from history. */

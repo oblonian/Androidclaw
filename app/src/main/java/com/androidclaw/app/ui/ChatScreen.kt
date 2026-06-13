@@ -202,7 +202,9 @@ fun ChatScreen(
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(vm.items) { item -> ChatBubble(item, copyToClipboard) { vm.retryLastTurn() } }
+                    items(vm.items) { item ->
+                        ChatBubble(item, copyToClipboard, onRetry = { vm.retryLastTurn() }, onContinue = { vm.continueTurn() })
+                    }
                 }
             }
 
@@ -231,7 +233,16 @@ fun ChatScreen(
                 )
                 Spacer(Modifier.size(8.dp))
                 if (vm.busy) {
-                    TextButton(onClick = { vm.cancelTurn() }) { Text("Stop") }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (vm.iterationCount > 0) {
+                            Text(
+                                "${vm.iterationCount} / ${settings.maxIterations}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                        }
+                        TextButton(onClick = { vm.cancelTurn() }) { Text("Stop") }
+                    }
                 } else {
                     IconButton(
                         onClick = {
@@ -303,8 +314,26 @@ private fun EmptyState(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatBubble(item: ChatItem, onCopy: (String) -> Unit, onRetry: () -> Unit) {
+private fun ChatBubble(item: ChatItem, onCopy: (String) -> Unit, onRetry: () -> Unit, onContinue: () -> Unit) {
     when (item) {
+        is ChatItem.LimitReached -> Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "↺ Reached ${item.max}-step limit",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onContinue) { Text("Continue") }
+            }
+        }
         is ChatItem.User -> Bubble(
             text = item.text,
             alignEnd = true,
