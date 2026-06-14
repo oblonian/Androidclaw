@@ -13,10 +13,20 @@ android {
         applicationId = "com.androidclaw.app"
         minSdk = 29
         targetSdk = 35
-        // versionCode comes from CI (the GitHub run number) so each rolling build
-        // outranks the last; falls back to 1 for local builds.
-        versionCode = (project.findProperty("clawVersionCode") as String?)?.toIntOrNull() ?: 1
-        versionName = "0.1." + ((project.findProperty("clawVersionCode") as String?) ?: "0")
+        // versionCode must STRICTLY increase across every build, whatever its
+        // source (CI or local). If a build's code is lower than the installed one,
+        // Android rejects it as a downgrade and the only way forward is an
+        // uninstall — which wipes the Keystore-encrypted credentials AND the
+        // accessibility-service grant, forcing the user to re-auth and re-enable
+        // screen control on every "update".
+        //
+        // Wall-clock minutes-since-epoch gives a monotonic code that behaves the
+        // same for CI and local builds: a build made later always outranks one made
+        // earlier, so installs are always in-place. (~29M today; fits in an Int with
+        // headroom until ~year 5900.) clawVersionCode (the CI run number) is kept
+        // only as a human-readable versionName suffix.
+        versionCode = (System.currentTimeMillis() / 60_000L).toInt()
+        versionName = "0.1." + ((project.findProperty("clawVersionCode") as String?) ?: "dev")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

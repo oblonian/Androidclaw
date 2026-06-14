@@ -25,9 +25,10 @@ jobs:
         run: ./gradlew :core-gateway:test
 
       - name: Build debug APK
-        # Run number → versionCode so each rolling build supersedes the previous;
-        # the committed keystore keeps the signature stable so it installs over the
-        # last build without an uninstall.
+        # versionCode is a monotonic wall-clock value computed in build.gradle.kts,
+        # so every build (CI or local) installs in-place over the last without a
+        # downgrade-forced uninstall. The committed keystore keeps the signature
+        # stable. clawVersionCode (the run number) only labels the versionName.
         run: ./gradlew :app:assembleDebug -PclawVersionCode=${{ github.run_number }}
 
       - name: Upload APK artifact

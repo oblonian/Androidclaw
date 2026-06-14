@@ -17,10 +17,23 @@ class SettingsStore(context: Context) {
     private val prefs: SharedPreferences
 
     init {
-        prefs = runCatching { createPrefs(context) }.getOrElse {
-            // A corrupted keystore key (after a device restore / key invalidation) makes
-            // create() throw on every launch. Drop the unreadable prefs and start fresh
-            // rather than bricking the app — the user re-enters credentials once.
+        // EncryptedSharedPreferences.create() can throw transiently — most often a
+        // brief keystore/keyset race right after an app update. Retry a few times
+        // before doing anything destructive, so a recoverable hiccup never costs the
+        // user their stored credentials.
+        var opened: SharedPreferences? = null
+        repeat(3) {
+            if (opened == null) {
+                runCatching { createPrefs(context) }
+                    .onSuccess { opened = it }
+                    .onFailure { Thread.sleep(50) }
+            }
+        }
+        prefs = opened ?: run {
+            // Persistently unreadable (e.g. the keystore key was invalidated by a
+            // device restore). Dropping the unreadable prefs is the only way to
+            // un-brick the app; the user re-enters credentials once. This is a last
+            // resort — it does NOT run for the transient failures handled above.
             runCatching {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
                 context.deleteSharedPreferences(PREFS_NAME)
