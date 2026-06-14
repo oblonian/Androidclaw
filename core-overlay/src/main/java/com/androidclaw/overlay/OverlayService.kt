@@ -11,6 +11,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -68,6 +69,9 @@ class OverlayService : Service() {
     private var collapsedX: Int = -1
     private var collapsedY: Int = -1
 
+    private var cardWidth: Int = -1
+    private var transcriptHeight: Int = -1
+
     private var pendingConfirmText: String? = null
     private var pendingConfirm: CompletableDeferred<OverlayDecision>? = null
 
@@ -76,6 +80,11 @@ class OverlayService : Service() {
     private var lastUserText: String? = null
     private var pendingSharedText: String? = null
 
+    // Resolved per-show from the current theme; used by transcript append helpers.
+    private var mutedLineColor = Color.parseColor("#4A4A5A")
+    private var userLabelColor = Color.parseColor("#3949AB")
+    private var clawLabelColor = Color.parseColor("#7C3E1A")
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -83,6 +92,8 @@ class OverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         collapsedX = OverlayBridge.initialPuckX
         collapsedY = OverlayBridge.initialPuckY
+        cardWidth = OverlayBridge.initialCardWidth
+        transcriptHeight = OverlayBridge.initialTranscriptHeight
         startInForeground()
         OverlayBridge.confirmHandler = ::handleConfirm
     }
@@ -121,6 +132,58 @@ class OverlayService : Service() {
         super.onDestroy()
     }
 
+    // ── Theme ─────────────────────────────────────────────────────────────────
+
+    private class Palette(
+        val panelBg: Int, val panelStroke: Int, val transcriptBg: Int,
+        val textColor: Int, val mutedText: Int,
+        val inputBarBg: Int, val inputFieldBg: Int, val inputStroke: Int, val hint: Int, val inputText: Int,
+        val headerEnd: Int, val divider: Int,
+        val userLabel: Int, val clawLabel: Int, val collapseBtn: Int,
+    )
+
+    private fun lightPalette() = Palette(
+        panelBg = Color.parseColor("#F4F5FB"), panelStroke = Color.parseColor("#D6D8E5"),
+        transcriptBg = Color.parseColor("#FFFFFF"),
+        textColor = Color.parseColor("#2A2A35"), mutedText = Color.parseColor("#4A4A5A"),
+        inputBarBg = Color.parseColor("#ECEDF5"), inputFieldBg = Color.parseColor("#FFFFFF"),
+        inputStroke = Color.parseColor("#D0D2E0"), hint = Color.parseColor("#9A9AAE"), inputText = Color.parseColor("#1E1E28"),
+        headerEnd = Color.parseColor("#7366BD"), divider = Color.parseColor("#E0E2EC"),
+        userLabel = Color.parseColor("#3949AB"), clawLabel = Color.parseColor("#7C3E1A"),
+        collapseBtn = Color.parseColor("#FFCCBC"),
+    )
+
+    private fun darkPalette() = Palette(
+        panelBg = Color.parseColor("#23242B"), panelStroke = Color.parseColor("#3A3B45"),
+        transcriptBg = Color.parseColor("#1A1B20"),
+        textColor = Color.parseColor("#E6E6EC"), mutedText = Color.parseColor("#B8B8C4"),
+        inputBarBg = Color.parseColor("#2A2B33"), inputFieldBg = Color.parseColor("#1F2026"),
+        inputStroke = Color.parseColor("#3A3B45"), hint = Color.parseColor("#80808E"), inputText = Color.parseColor("#ECECF2"),
+        headerEnd = Color.parseColor("#5560B0"), divider = Color.parseColor("#33343D"),
+        userLabel = Color.parseColor("#9FA8DA"), clawLabel = Color.parseColor("#E0A87C"),
+        collapseBtn = Color.parseColor("#FFFFFF"),
+    )
+
+    private fun resolvePalette(): Palette {
+        val dark = when (OverlayBridge.theme.mode) {
+            OverlayThemeMode.DARK -> true
+            OverlayThemeMode.LIGHT -> false
+            OverlayThemeMode.AUTO ->
+                (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        }
+        val p = if (dark) darkPalette() else lightPalette()
+        mutedLineColor = p.mutedText
+        userLabelColor = p.userLabel
+        clawLabelColor = p.clawLabel
+        return p
+    }
+
+    private fun darken(color: Int, f: Float): Int = Color.rgb(
+        (Color.red(color) * f).roundToInt().coerceIn(0, 255),
+        (Color.green(color) * f).roundToInt().coerceIn(0, 255),
+        (Color.blue(color) * f).roundToInt().coerceIn(0, 255),
+    )
+
     // ── Confirmation ──────────────────────────────────────────────────────────
 
     private suspend fun handleConfirm(description: String): OverlayDecision {
@@ -138,7 +201,6 @@ class OverlayService : Service() {
             pendingConfirmText = null
             pendingConfirm = null
             if (isAgentActive) {
-                // Re-ghost: agent is continuing after the user's verdict
                 isGhosted = true
                 params.alpha = 0.12f
                 rootView?.let { runCatching { windowManager.updateViewLayout(it, params) } }
@@ -227,20 +289,21 @@ class OverlayService : Service() {
     private fun showCollapsed() {
         expanded = false
         statusDotView = null
+        val theme = OverlayBridge.theme
         params.width = WindowManager.LayoutParams.WRAP_CONTENT
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        params.alpha = if (isAgentActive) 0.85f else 0.55f
+        params.alpha = if (isAgentActive) (theme.puckAlpha + 0.3f).coerceAtMost(1f) else theme.puckAlpha
 
         if (collapsedX >= 0) params.x = collapsedX
         if (collapsedY >= 0) params.y = collapsedY
 
-        val ringColor = if (isAgentActive) Color.parseColor("#FF7043") else Color.parseColor("#5C6BC0")
-        val fillColor = if (isAgentActive) Color.parseColor("#33FF7043") else Color.parseColor("#33FFFFFF")
+        val ringColor = if (isAgentActive) theme.accent else darken(theme.accent, 0.85f)
+        val fillColor = (0x33000000.toInt()) or (theme.accent and 0x00FFFFFF)
 
         val sz = dp(56)
         val puck = TextView(this).apply {
-            text = "🦞"
+            text = theme.puckGlyph
             textSize = 22f
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(sz, sz)
@@ -273,43 +336,44 @@ class OverlayService : Service() {
     private fun showExpanded() {
         expanded = true
         isGhosted = false
-        params.width = dp(320)
+        val theme = OverlayBridge.theme
+        val p = resolvePalette()
+        val screenW = resources.displayMetrics.widthPixels
+        params.width = if (cardWidth > 0) cardWidth.coerceIn(dp(260), screenW) else dp(320)
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        params.alpha = 0.96f
+        params.alpha = theme.panelAlpha
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F4F5FB"))
+                setColor(p.panelBg)
                 cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), Color.parseColor("#D6D8E5"))
+                setStroke(dp(1), p.panelStroke)
             }
             elevation = dp(20).toFloat()
             clipToOutline = true
         }
-        // Dismiss keyboard if user touches transcript/card outside input
         card.setOnTouchListener { _, _ -> restoreNotFocusable(); false }
 
-        card.addView(buildHeader())
-        card.addView(buildTranscriptArea())
+        card.addView(buildHeader(p, theme.accent))
+        card.addView(buildTranscriptArea(p))
         buildContinueBar()?.let { card.addView(it) }
         buildRetryBar()?.let { card.addView(it) }
-        card.addView(divider())
+        card.addView(divider(p))
         val pending = pendingConfirmText
         if (pending != null) {
             card.addView(buildConfirmPanel(pending))
-            card.addView(divider())
+            card.addView(divider(p))
         }
-        card.addView(buildInputRow(pending))
+        card.addView(buildInputRow(pending, p, theme.accent))
+        card.addView(buildResizeHandle(p))
 
         setRoot(card)
 
         card.alpha = 0f; card.scaleX = 0.96f; card.scaleY = 0.96f
         card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140).start()
     }
-
-    // ── Compact confirm (small card anchored near puck) ───────────────────────
 
     private fun showCompactConfirm(pending: String) {
         expanded = false
@@ -350,11 +414,9 @@ class OverlayService : Service() {
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        attachDragAndTap(titleText, snapToEdge = false) { /* drag handle */ }
+        attachDragAndTap(titleText, snapToEdge = false) { }
         titleBar.addView(titleText)
-
-        // Expand to full card button
-        val expandBtn = TextView(this).apply {
+        titleBar.addView(TextView(this).apply {
             text = "▿"
             textSize = 16f
             setTextColor(Color.WHITE)
@@ -362,8 +424,7 @@ class OverlayService : Service() {
             val sz = dp(36)
             layoutParams = LinearLayout.LayoutParams(sz, sz)
             setOnClickListener { showExpanded() }
-        }
-        titleBar.addView(expandBtn)
+        })
         card.addView(titleBar)
 
         card.addView(TextView(this).apply {
@@ -390,7 +451,7 @@ class OverlayService : Service() {
         card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(120).start()
     }
 
-    private fun buildHeader(): LinearLayout {
+    private fun buildHeader(p: Palette, accent: Int): LinearLayout {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -398,24 +459,24 @@ class OverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             background = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor("#D2512A"), Color.parseColor("#7366BD")),
+                intArrayOf(accent, p.headerEnd),
             ).apply {
                 cornerRadii = floatArrayOf(dp(20).toFloat(), dp(20).toFloat(), dp(20).toFloat(), dp(20).toFloat(), 0f, 0f, 0f, 0f)
             }
         }
         val title = TextView(this).apply {
-            text = "🦞 Claw"
+            text = "${OverlayBridge.theme.puckGlyph} Claw"
             textSize = 15f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        attachDragAndTap(title, snapToEdge = false) { /* drag handle */ }
+        attachDragAndTap(title, snapToEdge = false) { }
 
         val dot = TextView(this).apply {
             text = if (isAgentActive) "● thinking…" else "● ready"
             textSize = 10f
-            setTextColor(if (isAgentActive) Color.parseColor("#FFEB3B") else Color.parseColor("#A5D6A7"))
+            setTextColor(if (isAgentActive) Color.parseColor("#FFEB3B") else Color.parseColor("#C8E6C9"))
             setPadding(0, 0, dp(4), 0)
         }
         statusDotView = dot
@@ -423,17 +484,15 @@ class OverlayService : Service() {
         fun headerBtn(label: String, onClick: () -> Unit) = TextView(this).apply {
             text = label
             textSize = 14f
-            setTextColor(Color.parseColor("#FFCCBC"))
+            setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            val sz = dp(36)
+            val sz = dp(34)
             layoutParams = LinearLayout.LayoutParams(sz, sz)
             setOnClickListener { onClick() }
         }
 
         header.addView(title)
         header.addView(dot)
-
-        // Cancel (stop running turn) — visible only while agent is active
         if (isAgentActive) {
             header.addView(headerBtn("◼") {
                 turnJob?.cancel(); isAgentActive = false; isGhosted = false
@@ -442,40 +501,79 @@ class OverlayService : Service() {
                 autoHideAfterTask()
             })
         }
-
-        // Copy transcript
-        val copyBtn = headerBtn("⧉") {
+        header.addView(headerBtn("⧉") {
             val clip = ClipData.newPlainText("Claw conversation", transcript.toString())
             getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
-        }
-        header.addView(copyBtn)
-
-        // Close service
+        })
         header.addView(headerBtn("✕") { stopSelf() })
-
-        // Collapse to puck
         header.addView(headerBtn("▾") { showCollapsed() })
-
         return header
     }
 
-    private fun buildTranscriptArea(): ScrollView {
+    private fun buildTranscriptArea(p: Palette): ScrollView {
         val screenH = resources.displayMetrics.heightPixels
-        val transcriptH = (screenH * 0.28f).roundToInt().coerceIn(dp(120), dp(260))
+        val h = if (transcriptHeight > 0) transcriptHeight.coerceIn(dp(100), dp(420))
+        else (screenH * 0.28f).roundToInt().coerceIn(dp(120), dp(260))
         val tv = TextView(this).apply {
             text = if (transcript.isEmpty()) "Ask Claw something…" else transcript
             textSize = 12.5f
-            setTextColor(Color.parseColor("#2A2A35"))
+            setTextColor(p.textColor)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             setLineSpacing(dp(2).toFloat(), 1f)
         }
         transcriptView = tv
         return ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#FFFFFF"))
+            setBackgroundColor(p.transcriptBg)
             addView(tv)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, transcriptH)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, h)
             setOnTouchListener { _, _ -> restoreNotFocusable(); false }
         }.also { scrollView = it }
+    }
+
+    /** Bottom-right grip: drag to resize card width + transcript height; persisted. */
+    private fun buildResizeHandle(p: Palette): TextView {
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f; var downY = 0f
+        var startW = 0; var startH = 0
+        val screenW = resources.displayMetrics.widthPixels
+        return TextView(this).apply {
+            text = "⇲"
+            textSize = 14f
+            setTextColor(p.mutedText)
+            gravity = Gravity.CENTER or Gravity.END
+            setPadding(0, dp(2), dp(10), dp(4))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX; downY = event.rawY
+                        startW = params.width
+                        startH = scrollView?.height ?: ((resources.displayMetrics.heightPixels * 0.28f).roundToInt())
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dw = (event.rawX - downX).roundToInt()
+                        val dh = (event.rawY - downY).roundToInt()
+                        if (abs(dw) > slop || abs(dh) > slop) {
+                            cardWidth = (startW + dw).coerceIn(dp(260), (screenW - dp(8)).coerceAtLeast(dp(260)))
+                            transcriptHeight = (startH + dh).coerceIn(dp(100), dp(420))
+                            params.width = cardWidth
+                            scrollView?.let {
+                                it.layoutParams = (it.layoutParams as LinearLayout.LayoutParams).apply { height = transcriptHeight }
+                                it.requestLayout()
+                            }
+                            rootView?.let { v -> runCatching { windowManager.updateViewLayout(v, params) } }
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        OverlayBridge.onCardSizeChanged?.invoke(cardWidth, transcriptHeight)
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
     }
 
     private fun buildContinueBar(): LinearLayout? {
@@ -486,9 +584,8 @@ class OverlayService : Service() {
             setPadding(dp(12), dp(8), dp(8), dp(8))
             setBackgroundColor(Color.parseColor("#EDE7F6"))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-
             addView(TextView(this@OverlayService).apply {
-                text = "↺ Reached $max-step limit"
+                text = "↺ Reached $max-action limit"
                 textSize = 12f
                 setTextColor(Color.parseColor("#4527A0"))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -529,7 +626,6 @@ class OverlayService : Service() {
             setPadding(dp(12), dp(8), dp(8), dp(8))
             setBackgroundColor(Color.parseColor("#FFEBEE"))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-
             addView(TextView(this@OverlayService).apply {
                 text = "Something went wrong"
                 textSize = 12f
@@ -607,13 +703,13 @@ class OverlayService : Service() {
             setOnClickListener { onClick() }
         }
 
-    private fun buildInputRow(pending: String?): LinearLayout {
+    private fun buildInputRow(pending: String?, p: Palette, accent: Int): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(8), dp(8), dp(8))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            background = GradientDrawable().apply { setColor(Color.parseColor("#ECEDF5")) }
+            background = GradientDrawable().apply { setColor(p.inputBarBg) }
         }
         val input = EditText(this).apply {
             hint = when {
@@ -621,15 +717,15 @@ class OverlayService : Service() {
                 pending != null -> "Tell Claw what to do instead…"
                 else -> "Ask Claw something…"
             }
-            setHintTextColor(Color.parseColor("#9A9AAE"))
+            setHintTextColor(p.hint)
             textSize = 13f
-            setTextColor(Color.parseColor("#1E1E28"))
+            setTextColor(p.inputText)
             isEnabled = OverlayBridge.agent != null
             maxLines = 3
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FFFFFF"))
+                setColor(p.inputFieldBg)
                 cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), Color.parseColor("#D0D2E0"))
+                setStroke(dp(1), p.inputStroke)
             }
             setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -656,7 +752,7 @@ class OverlayService : Service() {
             gravity = Gravity.CENTER
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#FF6D3A"), Color.parseColor("#C44B00")),
+                intArrayOf(accent, darken(accent, 0.78f)),
             ).apply { cornerRadius = dp(22).toFloat() }
             val sz = dp(40)
             layoutParams = LinearLayout.LayoutParams(sz, sz)
@@ -686,9 +782,9 @@ class OverlayService : Service() {
         return row
     }
 
-    private fun divider() = View(this).apply {
+    private fun divider(p: Palette) = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
-        setBackgroundColor(Color.parseColor("#E0E2EC"))
+        setBackgroundColor(p.divider)
     }
 
     private fun spacer(w: Int) = View(this).apply {
@@ -732,7 +828,6 @@ class OverlayService : Service() {
             is OverlayReply.TextDelta -> appendAssistant(reply.text)
             is OverlayReply.ToolStatus -> {
                 if (reply.running) {
-                    // Ghost: nearly transparent so the agent can see/tap what's behind
                     if (pendingConfirmText == null) {
                         isGhosted = true
                         params.alpha = 0.12f
@@ -745,7 +840,7 @@ class OverlayService : Service() {
                 } else {
                     if (isGhosted) {
                         isGhosted = false
-                        params.alpha = 0.96f
+                        params.alpha = OverlayBridge.theme.panelAlpha
                         rootView?.let { runCatching { windowManager.updateViewLayout(it, params) } }
                     }
                     if (isAgentActive) {
@@ -771,7 +866,7 @@ class OverlayService : Service() {
                 isAgentActive = false
                 if (isGhosted) {
                     isGhosted = false
-                    params.alpha = 0.96f
+                    params.alpha = OverlayBridge.theme.panelAlpha
                     rootView?.let { runCatching { windowManager.updateViewLayout(it, params) } }
                 }
                 autoHideAfterTask()
@@ -780,8 +875,8 @@ class OverlayService : Service() {
                 isAgentActive = false
                 isGhosted = false
                 limitReachedMax = reply.max
-                appendLine("↺ Reached ${reply.max}-step limit — tap Continue below")
-                updateNotification("Reached step limit — tap to continue.")
+                appendLine("↺ Reached ${reply.max}-action limit — tap Continue below")
+                updateNotification("Reached action limit — tap to continue.")
                 showExpanded()
             }
             is OverlayReply.Failed -> {
@@ -798,7 +893,7 @@ class OverlayService : Service() {
     private fun autoHideAfterTask() {
         statusDotView?.apply {
             text = "● done"
-            setTextColor(Color.parseColor("#2E7D32"))
+            setTextColor(Color.parseColor("#A5D6A7"))
         }
         updateNotification("Tap to open the panel.")
         rootView?.postDelayed({
@@ -809,7 +904,7 @@ class OverlayService : Service() {
     private fun updateActiveStatus() {
         statusDotView?.apply {
             text = if (isAgentActive) "● thinking…" else "● ready"
-            setTextColor(if (isAgentActive) Color.parseColor("#FFEB3B") else Color.parseColor("#A5D6A7"))
+            setTextColor(if (isAgentActive) Color.parseColor("#FFEB3B") else Color.parseColor("#C8E6C9"))
         }
         if (!expanded) showCollapsed()
     }
@@ -821,7 +916,7 @@ class OverlayService : Service() {
         val prefix = "Claw: "
         val start = transcript.length
         transcript.append(prefix)
-        transcript.setSpan(ForegroundColorSpan(Color.parseColor("#7C3E1A")), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        transcript.setSpan(ForegroundColorSpan(clawLabelColor), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         assistantLineStart = transcript.length
         flushTranscript()
     }
@@ -832,7 +927,7 @@ class OverlayService : Service() {
         flushTranscript()
     }
 
-    private fun appendLine(line: String, color: Int = Color.parseColor("#4A4A5A")) {
+    private fun appendLine(line: String, color: Int = mutedLineColor) {
         if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
         val start = transcript.length
         transcript.append(line).append('\n')
@@ -847,7 +942,7 @@ class OverlayService : Service() {
         val prefix = "You: "
         val start = transcript.length
         transcript.append(prefix)
-        transcript.setSpan(ForegroundColorSpan(Color.parseColor("#3949AB")), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        transcript.setSpan(ForegroundColorSpan(userLabelColor), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         transcript.append(text).append('\n')
         trimTranscript()
         flushTranscript()

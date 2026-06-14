@@ -30,6 +30,13 @@ class ClawApp : Application() {
             container.settings.overlayPuckX = x
             container.settings.overlayPuckY = y
         }
+        OverlayBridge.initialCardWidth = container.settings.overlayCardWidth
+        OverlayBridge.initialTranscriptHeight = container.settings.overlayTranscriptHeight
+        OverlayBridge.onCardSizeChanged = { w, h ->
+            container.settings.overlayCardWidth = w
+            container.settings.overlayTranscriptHeight = h
+        }
+        applyOverlaySettings(container.settings)
     }
 }
 

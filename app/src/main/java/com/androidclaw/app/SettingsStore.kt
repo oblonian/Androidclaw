@@ -120,6 +120,37 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_OVERLAY_PUCK_Y, "-1")?.toIntOrNull() ?: -1
         set(value) = prefs.edit { putString(KEY_OVERLAY_PUCK_Y, value.toString()) }
 
+    // ── Overlay appearance (device prefs — not cleared on sign-out) ────────────
+
+    /** "LIGHT" | "DARK" | "AUTO". */
+    var overlayThemeMode: String
+        get() = prefs.getString(KEY_OVERLAY_THEME, "LIGHT") ?: "LIGHT"
+        set(value) = prefs.edit { putString(KEY_OVERLAY_THEME, value) }
+
+    var overlayAccent: Int
+        get() = prefs.getString(KEY_OVERLAY_ACCENT, null)?.toIntOrNull() ?: DEFAULT_OVERLAY_ACCENT
+        set(value) = prefs.edit { putString(KEY_OVERLAY_ACCENT, value.toString()) }
+
+    var overlayPanelOpacity: Float
+        get() = prefs.getString(KEY_OVERLAY_PANEL_OPACITY, null)?.toFloatOrNull()?.coerceIn(0.6f, 1f) ?: 0.96f
+        set(value) = prefs.edit { putString(KEY_OVERLAY_PANEL_OPACITY, value.coerceIn(0.6f, 1f).toString()) }
+
+    var overlayPuckOpacity: Float
+        get() = prefs.getString(KEY_OVERLAY_PUCK_OPACITY, null)?.toFloatOrNull()?.coerceIn(0.3f, 1f) ?: 0.55f
+        set(value) = prefs.edit { putString(KEY_OVERLAY_PUCK_OPACITY, value.coerceIn(0.3f, 1f).toString()) }
+
+    var overlayPuckGlyph: String
+        get() = prefs.getString(KEY_OVERLAY_PUCK_GLYPH, "🦞")?.takeIf { it.isNotBlank() } ?: "🦞"
+        set(value) = prefs.edit { putString(KEY_OVERLAY_PUCK_GLYPH, value.take(2).ifBlank { "🦞" }) }
+
+    /** Expanded-card size in px (-1 = default). */
+    var overlayCardWidth: Int
+        get() = prefs.getString(KEY_OVERLAY_CARD_W, "-1")?.toIntOrNull() ?: -1
+        set(value) = prefs.edit { putString(KEY_OVERLAY_CARD_W, value.toString()) }
+    var overlayTranscriptHeight: Int
+        get() = prefs.getString(KEY_OVERLAY_TRANSCRIPT_H, "-1")?.toIntOrNull() ?: -1
+        set(value) = prefs.edit { putString(KEY_OVERLAY_TRANSCRIPT_H, value.toString()) }
+
     /** Clears all stored credentials. The backend preference is kept so the sign-in screen
      *  pre-selects the last-used provider. */
     fun signOut() {
@@ -157,6 +188,14 @@ class SettingsStore(context: Context) {
         private const val KEY_MAX_ITERATIONS = "max_iterations"
         private const val KEY_OVERLAY_PUCK_X = "overlay_puck_x"
         private const val KEY_OVERLAY_PUCK_Y = "overlay_puck_y"
+        private const val KEY_OVERLAY_THEME = "overlay_theme"
+        private const val KEY_OVERLAY_ACCENT = "overlay_accent"
+        private const val KEY_OVERLAY_PANEL_OPACITY = "overlay_panel_opacity"
+        private const val KEY_OVERLAY_PUCK_OPACITY = "overlay_puck_opacity"
+        private const val KEY_OVERLAY_PUCK_GLYPH = "overlay_puck_glyph"
+        private const val KEY_OVERLAY_CARD_W = "overlay_card_w"
+        private const val KEY_OVERLAY_TRANSCRIPT_H = "overlay_transcript_h"
+        const val DEFAULT_OVERLAY_ACCENT: Int = 0xFFD2512A.toInt()
         const val DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
         const val DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6"
     }

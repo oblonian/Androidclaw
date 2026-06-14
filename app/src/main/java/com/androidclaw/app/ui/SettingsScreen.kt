@@ -1,14 +1,21 @@
 package com.androidclaw.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,11 +44,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.androidclaw.app.LlmBackend
 import com.androidclaw.app.SettingsStore
+import com.androidclaw.app.applyOverlaySettings
 import kotlinx.coroutines.launch
+
+private val ACCENT_PRESETS = listOf(
+    0xFFD2512A, 0xFF5560B0, 0xFF2E7D32, 0xFF7E57C2,
+    0xFF1E88E5, 0xFFD81B60, 0xFF00897B, 0xFFF59E0B,
+).map { it.toInt() }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +76,11 @@ fun SettingsScreen(
     var openRouterModel by remember { mutableStateOf(settings.openRouterModel) }
     var stepThrough by remember { mutableStateOf(settings.stepThrough) }
     var maxIterations by remember { mutableStateOf(settings.maxIterations) }
+    var overlayTheme by remember { mutableStateOf(settings.overlayThemeMode) }
+    var overlayAccent by remember { mutableStateOf(settings.overlayAccent) }
+    var panelOpacity by remember { mutableStateOf(settings.overlayPanelOpacity) }
+    var puckOpacity by remember { mutableStateOf(settings.overlayPuckOpacity) }
+    var puckGlyph by remember { mutableStateOf(settings.overlayPuckGlyph) }
     val openRouterConnected = settings.openRouterKey != null
 
     var anthropicUseOAuth by remember { mutableStateOf(settings.anthropicUseOAuth) }
@@ -77,6 +97,12 @@ fun SettingsScreen(
         settings.anthropicUseOAuth = anthropicUseOAuth
         settings.stepThrough = stepThrough
         settings.maxIterations = maxIterations
+        settings.overlayThemeMode = overlayTheme
+        settings.overlayAccent = overlayAccent
+        settings.overlayPanelOpacity = panelOpacity
+        settings.overlayPuckOpacity = puckOpacity
+        settings.overlayPuckGlyph = puckGlyph
+        applyOverlaySettings(settings)
     }
 
     Scaffold(
@@ -276,6 +302,68 @@ fun SettingsScreen(
                 }
             }
 
+            // ── Overlay appearance ────────────────────────────────────────────────
+            SettingsSection(title = "Overlay appearance") {
+                OverlayPreview(accent = overlayAccent, glyph = puckGlyph, panelAlpha = panelOpacity)
+
+                Text("Theme", style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    listOf("LIGHT" to "Light", "DARK" to "Dark", "AUTO" to "Auto").forEach { (value, label) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = overlayTheme == value, onClick = { overlayTheme = value })
+                            Text(label, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                Text("Accent", style = MaterialTheme.typography.bodyMedium)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    ACCENT_PRESETS.forEach { argb ->
+                        val selected = overlayAccent == argb
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color(argb))
+                                .border(
+                                    width = if (selected) 3.dp else 1.dp,
+                                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                    shape = CircleShape,
+                                )
+                                .clickable { overlayAccent = argb },
+                        )
+                    }
+                }
+
+                Text("Panel opacity  ${(panelOpacity * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = panelOpacity,
+                    onValueChange = { panelOpacity = it },
+                    valueRange = 0.6f..1f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Text("Puck opacity  ${(puckOpacity * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = puckOpacity,
+                    onValueChange = { puckOpacity = it },
+                    valueRange = 0.3f..1f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = puckGlyph,
+                    onValueChange = { puckGlyph = it.take(2) },
+                    label = { Text("Puck icon (emoji)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             Text(
                 "🔒 Keys and tokens are stored encrypted on this device only.",
                 style = MaterialTheme.typography.bodySmall,
@@ -321,6 +409,36 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
                 Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) { content() }
+        }
+    }
+}
+
+@Composable
+private fun OverlayPreview(accent: Int, glyph: String, panelAlpha: Float) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Puck preview
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color(accent).copy(alpha = 0.2f))
+                .border(2.dp, Color(accent), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(glyph, style = MaterialTheme.typography.titleMedium) }
+
+        // Card header preview
+        Box(
+            Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(accent).copy(alpha = panelAlpha))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text("$glyph Claw", color = Color.White, fontWeight = FontWeight.Bold)
         }
     }
 }
