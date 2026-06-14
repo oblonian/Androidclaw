@@ -30,7 +30,7 @@ jobs:
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 31
+          api-level: 34
           arch: x86_64
           target: google_apis
           avd-name: claw-test-avd
