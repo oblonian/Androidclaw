@@ -23,7 +23,7 @@ class ClawApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        OverlayBridge.agent = OverlayAgentImpl(container)
+        OverlayBridge.session = container.session
         OverlayBridge.initialPuckX = container.settings.overlayPuckX
         OverlayBridge.initialPuckY = container.settings.overlayPuckY
         OverlayBridge.onPuckPositionChanged = { x, y ->
@@ -49,6 +49,9 @@ class AppContainer(context: Context) {
     val settings = SettingsStore(context)
 
     val sessionStore = SessionStore(context)
+
+    /** The one shared conversation behind the app chat and the floating overlay. */
+    val session: AgentSessionImpl by lazy { AgentSessionImpl(this, context.applicationContext) }
 
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)

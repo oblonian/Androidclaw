@@ -1,6 +1,7 @@
 package com.androidclaw.app
 
 import android.content.Context
+import com.androidclaw.overlay.SessionEntry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -36,16 +37,16 @@ class SessionStore(context: Context) {
     }.getOrDefault(emptyList())
 
     /**
-     * Persists [items] as a single session, updating the row with [existingId]
+     * Persists [entries] as a single session, updating the row with [existingId]
      * in place when supplied (so a multi-turn conversation stays one entry).
      * Returns the session id to reuse on the next turn.
      */
     @Synchronized
-    fun save(items: List<ChatItem>, existingId: String? = null): String? {
-        val messages = items.mapNotNull { item ->
-            when (item) {
-                is ChatItem.User -> SavedMessage("user", item.text)
-                is ChatItem.Assistant -> item.text.takeIf { it.isNotBlank() }
+    fun save(entries: List<SessionEntry>, existingId: String? = null): String? {
+        val messages = entries.mapNotNull { entry ->
+            when (entry) {
+                is SessionEntry.User -> SavedMessage("user", entry.text)
+                is SessionEntry.Assistant -> entry.text.takeIf { it.isNotBlank() }
                     ?.let { SavedMessage("assistant", it) }
                 else -> null
             }

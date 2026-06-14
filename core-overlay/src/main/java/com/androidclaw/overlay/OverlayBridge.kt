@@ -1,7 +1,6 @@
 package com.androidclaw.overlay
 
-import kotlinx.coroutines.flow.Flow
-
+/** Ephemeral, live deltas a streaming UI renders as chrome while a turn runs. */
 sealed interface OverlayReply {
     data class TextDelta(val text: String) : OverlayReply
     data class ToolStatus(val name: String, val running: Boolean, val isError: Boolean) : OverlayReply
@@ -16,12 +15,6 @@ sealed interface OverlayDecision {
     data object Back : OverlayDecision
     data object Stop : OverlayDecision
     data class Chat(val note: String) : OverlayDecision
-}
-
-interface OverlayAgent {
-    fun runTurn(userText: String): Flow<OverlayReply>
-    fun continueFromLimit(): Flow<OverlayReply>
-    fun reset()
 }
 
 /** Base colour scheme for the overlay panel. AUTO follows the system setting. */
@@ -47,7 +40,8 @@ data class OverlayTheme(
 }
 
 object OverlayBridge {
-    @Volatile var agent: OverlayAgent? = null
+    /** The one shared conversation behind both the app chat and the overlay. */
+    @Volatile var session: AgentSession? = null
 
     @Volatile var confirmHandler: (suspend (String) -> OverlayDecision)? = null
 

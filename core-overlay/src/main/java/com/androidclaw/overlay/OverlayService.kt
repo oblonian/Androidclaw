@@ -38,10 +38,8 @@ import android.widget.TextView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
@@ -59,13 +57,11 @@ class OverlayService : Service() {
     private var expanded = false
     private var isAgentActive = false
     private var isGhosted = false
-    private var turnJob: Job? = null
 
     private var transcriptView: TextView? = null
     private var scrollView: ScrollView? = null
     private var statusDotView: TextView? = null
     private val transcript = SpannableStringBuilder()
-    private var assistantLineStart = -1
     private var collapsedX: Int = -1
     private var collapsedY: Int = -1
 
@@ -96,6 +92,18 @@ class OverlayService : Service() {
         transcriptHeight = OverlayBridge.initialTranscriptHeight
         startInForeground()
         OverlayBridge.confirmHandler = ::handleConfirm
+
+        // The shared session is the single source of truth: render its transcript
+        // verbatim and follow its live events for streaming chrome. A task started
+        // in the app streams straight into this overlay because both observe it.
+        OverlayBridge.session?.let { session ->
+            session.transcript.onEach { renderTranscript(it) }.launchIn(scope)
+            session.events.onEach { render(it) }.launchIn(scope)
+            session.state.onEach { st ->
+                isAgentActive = st.busy
+                if (expanded) updateActiveStatus()
+            }.launchIn(scope)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -125,7 +133,6 @@ class OverlayService : Service() {
     override fun onDestroy() {
         OverlayBridge.confirmHandler = null
         pendingConfirm?.complete(OverlayDecision.Stop)
-        turnJob?.cancel()
         scope.cancel()
         rootView?.let { runCatching { windowManager.removeView(it) } }
         rootView = null
@@ -370,6 +377,8 @@ class OverlayService : Service() {
         card.addView(buildResizeHandle(p))
 
         setRoot(card)
+        // Re-render with the freshly resolved palette and the latest history.
+        OverlayBridge.session?.let { renderTranscript(it.transcript.value) }
 
         card.alpha = 0f; card.scaleX = 0.96f; card.scaleY = 0.96f
         card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140).start()
@@ -495,8 +504,8 @@ class OverlayService : Service() {
         header.addView(dot)
         if (isAgentActive) {
             header.addView(headerBtn("◼") {
-                turnJob?.cancel(); isAgentActive = false; isGhosted = false
-                appendLine("⛔ Stopped.")
+                OverlayBridge.session?.stop()
+                isAgentActive = false; isGhosted = false
                 updateNotification("Tap to open.")
                 autoHideAfterTask()
             })
@@ -602,16 +611,11 @@ class OverlayService : Service() {
                     cornerRadius = dp(8).toFloat()
                 }
                 setOnClickListener {
-                    val agent = OverlayBridge.agent ?: return@setOnClickListener
+                    val session = OverlayBridge.session ?: return@setOnClickListener
                     limitReachedMax = null
-                    appendLine("↺ Continuing…", Color.parseColor("#5E35B1"))
                     isAgentActive = true
                     updateNotification("Continuing…")
-                    turnJob?.cancel()
-                    turnJob = agent.continueFromLimit()
-                        .onEach { render(it) }
-                        .catch { e -> render(OverlayReply.Failed(e.message ?: "Error")) }
-                        .launchIn(scope)
+                    session.continueFromLimit()
                     showExpanded()
                 }
             })
@@ -713,14 +717,14 @@ class OverlayService : Service() {
         }
         val input = EditText(this).apply {
             hint = when {
-                OverlayBridge.agent == null -> "Open Claw app and sign in"
+                OverlayBridge.session == null -> "Open Claw app and sign in"
                 pending != null -> "Tell Claw what to do instead…"
                 else -> "Ask Claw something…"
             }
             setHintTextColor(p.hint)
             textSize = 13f
             setTextColor(p.inputText)
-            isEnabled = OverlayBridge.agent != null
+            isEnabled = OverlayBridge.session != null
             maxLines = 3
             background = GradientDrawable().apply {
                 setColor(p.inputFieldBg)
@@ -801,31 +805,27 @@ class OverlayService : Service() {
     // ── Turn handling ─────────────────────────────────────────────────────────
 
     private fun send(text: String) {
-        val agent = OverlayBridge.agent ?: run {
+        val session = OverlayBridge.session ?: run {
             appendLine("⚠ Open the Claw app and sign in first.")
             return
         }
-        turnJob?.cancel()
         pendingConfirm?.complete(OverlayDecision.Stop)
         pendingConfirm = null
         pendingConfirmText = null
         lastUserText = text
         limitReachedMax = null
         showRetryButton = false
-        appendUserLine(text)
-        assistantLineStart = -1
         isAgentActive = true
         updateNotification("Working on: ${text.take(40)}…")
         if (!expanded) showExpanded() else updateActiveStatus()
-        turnJob = agent.runTurn(text)
-            .onEach { render(it) }
-            .catch { e -> render(OverlayReply.Failed(e.message ?: "Something went wrong")) }
-            .launchIn(scope)
+        // The session owns the turn; its transcript/events stream back into us.
+        session.send(text)
     }
 
+    // Chrome only — the conversation text is rendered from session.transcript.
     private fun render(reply: OverlayReply) {
         when (reply) {
-            is OverlayReply.TextDelta -> appendAssistant(reply.text)
+            is OverlayReply.TextDelta -> { /* text comes from the transcript */ }
             is OverlayReply.ToolStatus -> {
                 if (reply.running) {
                     if (pendingConfirmText == null) {
@@ -850,11 +850,6 @@ class OverlayService : Service() {
                         }
                     }
                 }
-                appendLine(when {
-                    reply.isError -> "⚠ ${reply.name} failed"
-                    reply.running -> "⚙ ${reply.name}…"
-                    else -> "✓ ${reply.name}"
-                })
             }
             is OverlayReply.IterationUpdate -> {
                 statusDotView?.apply {
@@ -875,7 +870,6 @@ class OverlayService : Service() {
                 isAgentActive = false
                 isGhosted = false
                 limitReachedMax = reply.max
-                appendLine("↺ Reached ${reply.max}-action limit — tap Continue below")
                 updateNotification("Reached action limit — tap to continue.")
                 showExpanded()
             }
@@ -883,7 +877,6 @@ class OverlayService : Service() {
                 isAgentActive = false
                 isGhosted = false
                 showRetryButton = lastUserText != null
-                appendLine("⚠ ${reply.message}")
                 updateNotification("Something went wrong — tap to open.")
                 showExpanded()
             }
@@ -911,39 +904,55 @@ class OverlayService : Service() {
 
     // ── Transcript ────────────────────────────────────────────────────────────
 
-    private fun beginAssistantLine() {
+    /**
+     * Rebuilds the visible transcript from the shared session's entries. This is
+     * the only writer of conversation text, so the overlay always shows exactly
+     * what the app shows — including a task that began in the app and popped here.
+     */
+    private fun renderTranscript(entries: List<SessionEntry>) {
+        transcript.clear()
+        for (entry in entries) {
+            when (entry) {
+                is SessionEntry.User -> labeledLine("You: ", userLabelColor, entry.text)
+                is SessionEntry.Assistant ->
+                    if (entry.text.isNotBlank()) labeledLine("Claw: ", clawLabelColor, entry.text)
+                is SessionEntry.Tool -> mutedLine(
+                    when {
+                        entry.isError -> "⚠ ${entry.name} failed"
+                        entry.running -> "⚙ ${entry.name}…"
+                        else -> "✓ ${entry.name}"
+                    },
+                )
+                is SessionEntry.Error -> mutedLine("⚠ ${entry.text}")
+                is SessionEntry.LimitReached ->
+                    mutedLine("↺ Reached ${entry.max}-action limit — tap Continue below")
+            }
+        }
+        trimTranscript()
+        flushTranscript()
+    }
+
+    private fun labeledLine(prefix: String, labelColor: Int, body: String) {
         if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
-        val prefix = "Claw: "
         val start = transcript.length
         transcript.append(prefix)
-        transcript.setSpan(ForegroundColorSpan(clawLabelColor), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        assistantLineStart = transcript.length
-        flushTranscript()
+        transcript.setSpan(ForegroundColorSpan(labelColor), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        transcript.append(body).append('\n')
     }
 
-    private fun appendAssistant(delta: String) {
-        if (assistantLineStart < 0) beginAssistantLine()
-        transcript.append(delta)
-        flushTranscript()
+    private fun mutedLine(line: String) {
+        if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
+        val start = transcript.length
+        transcript.append(line).append('\n')
+        transcript.setSpan(ForegroundColorSpan(mutedLineColor), start, start + line.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
+    /** One-off system note (e.g. not-signed-in) that isn't part of the session. */
     private fun appendLine(line: String, color: Int = mutedLineColor) {
         if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
         val start = transcript.length
         transcript.append(line).append('\n')
         transcript.setSpan(ForegroundColorSpan(color), start, start + line.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        assistantLineStart = -1
-        trimTranscript()
-        flushTranscript()
-    }
-
-    private fun appendUserLine(text: String) {
-        if (transcript.isNotEmpty() && transcript.last() != '\n') transcript.append('\n')
-        val prefix = "You: "
-        val start = transcript.length
-        transcript.append(prefix)
-        transcript.setSpan(ForegroundColorSpan(userLabelColor), start, start + prefix.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        transcript.append(text).append('\n')
         trimTranscript()
         flushTranscript()
     }
@@ -1041,6 +1050,13 @@ class OverlayService : Service() {
 
         fun start(context: Context) {
             val i = Intent(context, OverlayService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
+            else context.startService(i)
+        }
+
+        /** Start (if needed) and pop the expanded card — used to auto-show a running task. */
+        fun show(context: Context) {
+            val i = Intent(context, OverlayService::class.java).setAction(ACTION_SHOW)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
             else context.startService(i)
         }
