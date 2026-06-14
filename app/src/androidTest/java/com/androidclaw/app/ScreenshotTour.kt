@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -67,6 +68,9 @@ class ScreenshotTour {
 
     @Before
     fun clearCreds() = SettingsStore(ctx).signOut()
+
+    @After
+    fun resetCreds() = SettingsStore(ctx).signOut()
 
     @Test
     fun setupScreen() {
