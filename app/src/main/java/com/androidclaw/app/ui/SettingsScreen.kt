@@ -35,6 +35,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -84,6 +88,7 @@ fun SettingsScreen(
     val openRouterConnected = settings.openRouterKey != null
 
     var anthropicUseOAuth by remember { mutableStateOf(settings.anthropicUseOAuth) }
+    var showApiKey by remember { mutableStateOf(false) }
     var oauthCode by remember { mutableStateOf("") }
     var oauthConnecting by remember { mutableStateOf(false) }
     var oauthMessage by remember { mutableStateOf("") }
@@ -139,15 +144,18 @@ fun SettingsScreen(
                 )
 
                 if (backend == LlmBackend.ANTHROPIC) {
-                    Row(
-                        Modifier.padding(start = 4.dp, top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = !anthropicUseOAuth, onClick = { anthropicUseOAuth = false })
-                        Text("API key", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.width(16.dp))
-                        RadioButton(selected = anthropicUseOAuth, onClick = { anthropicUseOAuth = true })
-                        Text("Claude account", style = MaterialTheme.typography.bodyMedium)
+                    // Auth-type picker — vertical for consistency with provider picker above
+                    Column(Modifier.padding(start = 4.dp, top = 2.dp)) {
+                        BackendOption(
+                            label = "API key",
+                            selected = !anthropicUseOAuth,
+                            onSelect = { anthropicUseOAuth = false },
+                        )
+                        BackendOption(
+                            label = "Claude account",
+                            selected = anthropicUseOAuth,
+                            onSelect = { anthropicUseOAuth = true },
+                        )
                     }
 
                     if (!anthropicUseOAuth) {
@@ -156,6 +164,16 @@ fun SettingsScreen(
                             onValueChange = { anthropicKey = it },
                             label = { Text("Anthropic API key") },
                             singleLine = true,
+                            visualTransformation = if (showApiKey) VisualTransformation.None
+                                                   else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showApiKey = !showApiKey }) {
+                                    Icon(
+                                        if (showApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = if (showApiKey) "Hide key" else "Show key",
+                                    )
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
@@ -445,8 +463,11 @@ private fun OverlayPreview(accent: Int, glyph: String, panelAlpha: Float) {
 
 @Composable
 private fun BackendOption(label: String, selected: Boolean, onSelect: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = selected, onClick = onSelect)
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onSelect),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
         Text(label, style = MaterialTheme.typography.bodyMedium)
     }
 }

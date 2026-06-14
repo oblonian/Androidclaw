@@ -27,9 +27,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
@@ -98,6 +105,7 @@ fun SetupScreen(
     // Auth form state
     var backend by remember { mutableStateOf(settings.backend) }
     var apiKey by remember { mutableStateOf(settings.anthropicKey.orEmpty()) }
+    var showApiKey by remember { mutableStateOf(false) }
     var useOAuth by remember { mutableStateOf(settings.anthropicUseOAuth) }
     var oauthCode by remember { mutableStateOf("") }
     var oauthStatus by remember { mutableStateOf("") }
@@ -184,6 +192,23 @@ fun SetupScreen(
                                 label = { Text("Anthropic API key") },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
+                                visualTransformation = if (showApiKey) VisualTransformation.None
+                                                       else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showApiKey = !showApiKey }) {
+                                        Icon(
+                                            if (showApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                            contentDescription = if (showApiKey) "Hide key" else "Show key",
+                                        )
+                                    }
+                                },
+                            )
+                            Text(
+                                "Get your key at console.anthropic.com",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
                             )
                             Button(
                                 onClick = {
