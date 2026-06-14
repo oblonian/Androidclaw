@@ -49,12 +49,10 @@ jobs:
             mkdir -p screenshots
             adb pull /sdcard/Android/data/com.androidclaw.app/files/screenshots/. screenshots/ || true
             echo "===SCREENSHOTS_BEGIN==="
-            shopt -s nullglob
-            for f in screenshots/*.png; do
+            find screenshots -name "*.png" -type f | sort | while read -r f; do
               echo "===IMG_NAME:$(basename "$f")"
               base64 -w0 "$f"
-              echo ""
-              echo "===IMG_END"
+              printf "\n===IMG_END\n"
             done
             echo "===SCREENSHOTS_END==="
 

@@ -3,28 +3,24 @@ package com.androidclaw.app
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onAllNodes
-import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.runner.RunWith
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
 import java.io.File
 import java.io.FileOutputStream
 
 /**
  * Walks the app's screens on a real (emulated) device and saves a scaled PNG of
  * each one to the app's external files dir. CI pulls these so the UI can be
- * reviewed visually — this is a screenshot harness, not a pass/fail test, so
- * every capture is wrapped to never abort the tour.
+ * reviewed visually — this is a screenshot harness, not a pass/fail test.
  *
  * Screenshots land in /sdcard/Android/data/com.androidclaw.app/files/screenshots
  */
@@ -87,7 +83,7 @@ class ScreenshotTour {
             shoot("04_chat_landing")
             // Open overflow → Settings
             runCatching {
-                compose.onAllNodes(hasContentDescription("More")).onFirst().performClick()
+                compose.onNodeWithContentDescription("More").performClick()
                 compose.waitForIdle()
                 compose.onNodeWithText("Settings").performClick()
                 compose.waitForIdle()
