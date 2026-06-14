@@ -58,9 +58,10 @@ class AnthropicProvider(
                 header("anthropic-version", "2023-06-01")
                 if (bearerToken.isNotEmpty()) {
                     header("Authorization", "Bearer $bearerToken")
-                    header("anthropic-beta", "oauth-2025-04-20")
+                    header("anthropic-beta", "oauth-2025-04-20,prompt-caching-2024-07-31")
                 } else {
                     header("x-api-key", apiKey)
+                    header("anthropic-beta", "prompt-caching-2024-07-31")
                 }
             }
             .post(body)
@@ -151,32 +152,38 @@ class AnthropicProvider(
         put("model", model)
         put("max_tokens", request.maxTokens)
         put("stream", true)
-        if (bearerToken.isNotEmpty()) {
-            // OAuth tokens are scoped to the Claude Code client; the API requires the
-            // system prompt to begin with its identity block. Ours follows as a second block.
-            put("system", buildJsonArray {
+        // System prompt is always sent as an array so cache_control can be attached.
+        // The last block is marked ephemeral — the API caches everything up to and
+        // including the marked block, so the system prompt + tools are cached together.
+        put("system", buildJsonArray {
+            if (bearerToken.isNotEmpty()) {
+                // OAuth tokens are scoped to the Claude Code client; the API requires the
+                // system prompt to begin with its identity block. Ours follows as a second block.
                 add(buildJsonObject {
                     put("type", "text")
                     put("text", "You are Claude Code, Anthropic's official CLI for Claude.")
                 })
-                add(buildJsonObject {
-                    put("type", "text")
-                    put("text", request.system)
-                })
+            }
+            add(buildJsonObject {
+                put("type", "text")
+                put("text", request.system)
+                put("cache_control", buildJsonObject { put("type", "ephemeral") })
             })
-        } else {
-            put("system", request.system)
-        }
+        })
         put("messages", buildJsonArray {
             request.messages.forEach { add(encodeMessage(it)) }
         })
         if (request.tools.isNotEmpty()) {
             put("tools", buildJsonArray {
-                request.tools.forEach { tool ->
+                request.tools.forEachIndexed { index, tool ->
                     add(buildJsonObject {
                         put("name", tool.name)
                         put("description", tool.description)
                         put("input_schema", tool.inputSchema)
+                        // Mark the last tool so the system+tools block is cached together.
+                        if (index == request.tools.lastIndex) {
+                            put("cache_control", buildJsonObject { put("type", "ephemeral") })
+                        }
                     })
                 }
             })

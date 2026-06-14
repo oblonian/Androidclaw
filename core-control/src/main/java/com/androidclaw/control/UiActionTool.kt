@@ -30,12 +30,13 @@ class UiActionTool : Tool {
 
     override val schema = ToolSchema(
         name = "ui_action",
-        description = "Act on the foreground app. Actions: " +
+        description = "Act on the foreground app. Returns the updated screen after the action " +
+            "so you can immediately plan the next step without a separate read_screen call. " +
+            "Actions: " +
             "'tap' (taps the element whose text/description matches `target`), " +
             "'type' (enters `text` into a field, optionally the one matching `target`), " +
             "'scroll' (scrolls `direction` up/down), " +
-            "'back' / 'home' / 'recents' (system navigation). " +
-            "Call read_screen first to see what is available.",
+            "'back' / 'home' / 'recents' (system navigation).",
         inputSchema = buildJsonObject {
             put("type", "object")
             put("properties", buildJsonObject {
@@ -66,7 +67,7 @@ class UiActionTool : Tool {
         val text = args.str("text")
         val direction = args.str("direction")
 
-        val result = when (action) {
+        val actionResult = when (action) {
             "tap" -> target?.let { service.click(it) }
                 ?: "tap needs a 'target' (the element text/description)"
             "type" -> text?.let { t ->
@@ -79,7 +80,11 @@ class UiActionTool : Tool {
             "back", "home", "recents" -> service.globalAction(action)
             else -> "Unknown action '$action'"
         }
-        ToolResult(result)
+        // Let the UI settle, then capture the resulting screen so the model can
+        // plan the next step without a separate read_screen round-trip.
+        delay(if (action == "type") 200L else 700L)
+        val screen = service.dumpScreen()
+        ToolResult("$actionResult\n\n$screen")
     }
 
     private fun strProp(description: String): JsonObject = buildJsonObject {

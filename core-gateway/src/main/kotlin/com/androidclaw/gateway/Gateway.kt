@@ -46,7 +46,7 @@ class Gateway(
             val toolCalls = mutableListOf<ToolCall>()
 
             try {
-                provider.stream(LlmRequest(systemPrompt, messages, schemas)).collect { event ->
+                provider.stream(LlmRequest(systemPrompt, pruneScreenHistory(messages), schemas)).collect { event ->
                     when (event) {
                         is LlmEvent.TextDelta -> {
                             text.append(event.text)
@@ -125,6 +125,48 @@ class Gateway(
 
         // Reached the hard round-trip ceiling (e.g. an all-perception loop).
         emit(AgentEvent.TurnLimitReached(messages, maxIterations))
+    }
+
+    /**
+     * Replaces all but the most recent read_screen result with a placeholder.
+     * Keeps the full history in [messages] for session persistence; only the
+     * copy sent to the LLM is trimmed, cutting prompt tokens on every iteration.
+     */
+    private fun pruneScreenHistory(messages: List<ChatMessage>): List<ChatMessage> {
+        // Collect IDs of all read_screen tool_use blocks.
+        val readScreenIds = buildSet {
+            for (msg in messages) {
+                if (msg.role != Role.ASSISTANT) continue
+                for (block in msg.content) {
+                    if (block is ContentBlock.ToolUse && block.name == "read_screen") add(block.id)
+                }
+            }
+        }
+        if (readScreenIds.isEmpty()) return messages
+
+        // Collect the matching tool_result IDs in document order.
+        val resultIds = buildList {
+            for (msg in messages) {
+                if (msg.role != Role.USER) continue
+                for (block in msg.content) {
+                    if (block is ContentBlock.ToolResult && block.toolUseId in readScreenIds) {
+                        add(block.toolUseId)
+                    }
+                }
+            }
+        }
+        if (resultIds.size <= 1) return messages
+
+        val toPrune = resultIds.dropLast(1).toSet()
+        return messages.map { msg ->
+            if (msg.role != Role.USER) return@map msg
+            val newContent = msg.content.map { block ->
+                if (block is ContentBlock.ToolResult && block.toolUseId in toPrune)
+                    block.copy(content = "[screen omitted]")
+                else block
+            }
+            if (newContent == msg.content) msg else msg.copy(content = newContent)
+        }
     }
 
     private fun assistantMessage(text: String, calls: List<ToolCall>): ChatMessage {
