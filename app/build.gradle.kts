@@ -17,6 +17,7 @@ android {
         // outranks the last; falls back to 1 for local builds.
         versionCode = (project.findProperty("clawVersionCode") as String?)?.toIntOrNull() ?: 1
         versionName = "0.1." + ((project.findProperty("clawVersionCode") as String?) ?: "0")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -78,4 +79,10 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
+
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
