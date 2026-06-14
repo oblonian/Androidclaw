@@ -2,6 +2,7 @@ package com.androidclaw.control
 
 import com.androidclaw.llm.ToolSchema
 import com.androidclaw.tools.PermissionTier
+import com.androidclaw.tools.SCREEN_MARKER
 import com.androidclaw.tools.Tool
 import com.androidclaw.tools.ToolResult
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,7 @@ class ReadScreenTool : Tool {
                 "Accessibility service is off. Ask the user to enable AndroidClaw in " +
                     "Settings → Accessibility so I can read and control the screen.",
             )
-        ToolResult(service.dumpScreen())
+        // Tag the capture so the Gateway can prune stale screens from history.
+        ToolResult(SCREEN_MARKER + service.dumpScreen())
     }
 }

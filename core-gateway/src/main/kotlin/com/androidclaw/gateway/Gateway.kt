@@ -10,6 +10,7 @@ import com.androidclaw.llm.Role
 import com.androidclaw.llm.StopReason
 import com.androidclaw.llm.ToolCall
 import com.androidclaw.tools.PermissionTier
+import com.androidclaw.tools.SCREEN_MARKER
 import com.androidclaw.tools.ToolRegistry
 import com.androidclaw.tools.ToolResult
 import kotlinx.coroutines.flow.Flow
@@ -128,44 +129,42 @@ class Gateway(
     }
 
     /**
-     * Replaces all but the most recent read_screen result with a placeholder.
-     * Keeps the full history in [messages] for session persistence; only the
-     * copy sent to the LLM is trimmed, cutting prompt tokens on every iteration.
+     * Collapses every folded screen capture in the history except the most
+     * recent one. Screens arrive tagged with [SCREEN_MARKER] — from read_screen
+     * and from the post-action screen that ui_action / open_app return — and the
+     * full dump is large, so keeping every one would blow the prompt up as a turn
+     * grows. Only the LLM-bound copy is trimmed; [messages] keeps the originals
+     * for the caller's persisted history. The action outcome before the marker
+     * is preserved so the model still sees what each step did.
      */
     private fun pruneScreenHistory(messages: List<ChatMessage>): List<ChatMessage> {
-        // Collect IDs of all read_screen tool_use blocks.
-        val readScreenIds = buildSet {
-            for (msg in messages) {
-                if (msg.role != Role.ASSISTANT) continue
-                for (block in msg.content) {
-                    if (block is ContentBlock.ToolUse && block.name == "read_screen") add(block.id)
-                }
-            }
-        }
-        if (readScreenIds.isEmpty()) return messages
-
-        // Collect the matching tool_result IDs in document order.
-        val resultIds = buildList {
-            for (msg in messages) {
-                if (msg.role != Role.USER) continue
-                for (block in msg.content) {
-                    if (block is ContentBlock.ToolResult && block.toolUseId in readScreenIds) {
-                        add(block.toolUseId)
+        // (messageIndex, blockIndex) of every tool_result carrying a screen.
+        val located = buildList {
+            messages.forEachIndexed { mi, msg ->
+                if (msg.role != Role.USER) return@forEachIndexed
+                msg.content.forEachIndexed { bi, block ->
+                    if (block is ContentBlock.ToolResult && SCREEN_MARKER in block.content) {
+                        add(mi to bi)
                     }
                 }
             }
         }
-        if (resultIds.size <= 1) return messages
+        if (located.size <= 1) return messages
 
-        val toPrune = resultIds.dropLast(1).toSet()
-        return messages.map { msg ->
-            if (msg.role != Role.USER) return@map msg
-            val newContent = msg.content.map { block ->
-                if (block is ContentBlock.ToolResult && block.toolUseId in toPrune)
-                    block.copy(content = "[screen omitted]")
-                else block
+        val stale = located.dropLast(1).toSet() // keep only the latest verbatim
+        return messages.mapIndexed { mi, msg ->
+            if (msg.role != Role.USER) return@mapIndexed msg
+            var changed = false
+            val newContent = msg.content.mapIndexed { bi, block ->
+                if ((mi to bi) in stale && block is ContentBlock.ToolResult) {
+                    changed = true
+                    val outcome = block.content.substringBefore(SCREEN_MARKER)
+                    block.copy(content = outcome + SCREEN_MARKER + "[earlier screen omitted]")
+                } else {
+                    block
+                }
             }
-            if (newContent == msg.content) msg else msg.copy(content = newContent)
+            if (changed) msg.copy(content = newContent) else msg
         }
     }
 

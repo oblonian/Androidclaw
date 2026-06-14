@@ -3,6 +3,7 @@ package com.androidclaw.control
 import android.content.Context
 import android.content.Intent
 import com.androidclaw.llm.ToolSchema
+import com.androidclaw.tools.SCREEN_MARKER
 import com.androidclaw.tools.Tool
 import com.androidclaw.tools.ToolResult
 import com.androidclaw.tools.objectSchema
@@ -53,10 +54,13 @@ class OpenAppTool(private val context: Context) : Tool {
 
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(launchIntent)
-        // Wait for the launched app to render its first frame.
+        // Wait for the launched app to render its first frame, then capture it.
+        // The accessibility tree must be walked on the main thread.
         delay(1500)
-        val screen = ClawAccessibilityService.instance?.dumpScreen().orEmpty()
-        val suffix = if (screen.isNotEmpty()) "\n\n$screen" else ""
+        val screen = withContext(Dispatchers.Main) {
+            ClawAccessibilityService.instance?.dumpScreen()
+        }.orEmpty()
+        val suffix = if (screen.isNotEmpty()) SCREEN_MARKER + screen else ""
         ToolResult("Opened ${launchIntent.component?.packageName ?: query}$suffix")
     }
 }

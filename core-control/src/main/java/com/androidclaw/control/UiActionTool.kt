@@ -2,6 +2,7 @@ package com.androidclaw.control
 
 import com.androidclaw.llm.ToolSchema
 import com.androidclaw.tools.PermissionTier
+import com.androidclaw.tools.SCREEN_MARKER
 import com.androidclaw.tools.Tool
 import com.androidclaw.tools.ToolResult
 import kotlinx.coroutines.Dispatchers
@@ -84,7 +85,7 @@ class UiActionTool : Tool {
         // plan the next step without a separate read_screen round-trip.
         delay(if (action == "type") 200L else 700L)
         val screen = service.dumpScreen()
-        ToolResult("$actionResult\n\n$screen")
+        ToolResult(actionResult + SCREEN_MARKER + screen)
     }
 
     private fun strProp(description: String): JsonObject = buildJsonObject {

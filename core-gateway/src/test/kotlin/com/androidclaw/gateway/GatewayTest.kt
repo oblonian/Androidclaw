@@ -9,6 +9,7 @@ import com.androidclaw.llm.StopReason
 import com.androidclaw.llm.ToolCall
 import com.androidclaw.llm.ToolSchema
 import com.androidclaw.tools.PermissionTier
+import com.androidclaw.tools.SCREEN_MARKER
 import com.androidclaw.tools.Tool
 import com.androidclaw.tools.ToolRegistry
 import com.androidclaw.tools.ToolResult
@@ -29,8 +30,13 @@ private class FakeProvider(private val turns: List<List<LlmEvent>>) : LlmProvide
     var calls = 0
         private set
 
-    override fun stream(request: LlmRequest): Flow<LlmEvent> =
-        flowOf(*turns[calls++].toTypedArray())
+    /** The messages of each request, captured in order, for prompt assertions. */
+    val requests = mutableListOf<List<ChatMessage>>()
+
+    override fun stream(request: LlmRequest): Flow<LlmEvent> {
+        requests += request.messages
+        return flowOf(*turns[calls++].toTypedArray())
+    }
 }
 
 private class EchoTool : Tool {
@@ -43,6 +49,17 @@ private class PeekTool : Tool {
     override val countsTowardActionLimit = false
     override val schema = ToolSchema("peek", "Reads state", buildJsonObject { put("type", "object") })
     override suspend fun execute(args: JsonObject) = ToolResult("peeked")
+}
+
+/** Mimics ui_action / read_screen: returns an outcome plus a tagged screen dump. */
+private class ScreenTool : Tool {
+    private var n = 0
+    override val countsTowardActionLimit = false
+    override val schema = ToolSchema("screen", "Acts and returns the screen", buildJsonObject { put("type", "object") })
+    override suspend fun execute(args: JsonObject): ToolResult {
+        n++
+        return ToolResult("acted$n" + SCREEN_MARKER + "App: screen-body-$n")
+    }
 }
 
 /** A CONFIRM-tier tool that records whether it actually ran. */
@@ -197,6 +214,59 @@ class GatewayTest {
         assertEquals(3, provider.calls)
         val limitEvent = events.last() as AgentEvent.TurnLimitReached
         assertEquals(3, limitEvent.max)
+    }
+
+    private fun toolResults(messages: List<ChatMessage>): List<ContentBlock.ToolResult> =
+        messages.flatMap { it.content }.filterIsInstance<ContentBlock.ToolResult>()
+
+    @Test
+    fun `stale screens are pruned from the prompt but kept in history`() = runTest {
+        val call = ToolCall("s1", "screen", JsonObject(emptyMap()))
+        // Two screen-returning tool calls, then a final answer.
+        val provider = FakeProvider(listOf(
+            listOf(LlmEvent.ToolCallReady(call), LlmEvent.Completed(StopReason.TOOL_USE)),
+            listOf(LlmEvent.ToolCallReady(call), LlmEvent.Completed(StopReason.TOOL_USE)),
+            listOf(LlmEvent.TextDelta("done"), LlmEvent.Completed(StopReason.END_TURN)),
+        ))
+        val registry = ToolRegistry().apply { register(ScreenTool()) }
+        val gateway = Gateway(provider, registry, "sys")
+
+        val events = gateway.runTurn(history).toList()
+
+        // On the final request, the first screen is collapsed, the second is intact.
+        val lastRequest = provider.requests.last()
+        val results = toolResults(lastRequest)
+        assertEquals(2, results.size)
+        assertTrue(results[0].content.contains("[earlier screen omitted]"))
+        assertTrue(!results[0].content.contains("screen-body-1"))
+        // The action outcome before the screen is preserved.
+        assertTrue(results[0].content.startsWith("acted1"))
+        // The most recent screen is kept verbatim.
+        assertTrue(results[1].content.contains("screen-body-2"))
+
+        // The persisted history (TurnComplete) keeps BOTH full screens.
+        val complete = events.last() as AgentEvent.TurnComplete
+        val kept = toolResults(complete.messages)
+        assertTrue(kept[0].content.contains("screen-body-1"))
+        assertTrue(kept[1].content.contains("screen-body-2"))
+    }
+
+    @Test
+    fun `a single screen is left untouched`() = runTest {
+        val call = ToolCall("s1", "screen", JsonObject(emptyMap()))
+        val provider = FakeProvider(listOf(
+            listOf(LlmEvent.ToolCallReady(call), LlmEvent.Completed(StopReason.TOOL_USE)),
+            listOf(LlmEvent.TextDelta("done"), LlmEvent.Completed(StopReason.END_TURN)),
+        ))
+        val registry = ToolRegistry().apply { register(ScreenTool()) }
+        val gateway = Gateway(provider, registry, "sys")
+
+        gateway.runTurn(history).toList()
+
+        val results = toolResults(provider.requests.last())
+        assertEquals(1, results.size)
+        assertTrue(results[0].content.contains("screen-body-1"))
+        assertTrue(!results[0].content.contains("omitted"))
     }
 
     @Test
