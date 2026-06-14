@@ -35,7 +35,10 @@ jobs:
           target: google_apis
           avd-name: claw-test-avd
           force-avd-creation: false
-          emulator-options: -no-snapshot-save -noaudio -no-boot-anim -camera-back none
+          # -no-window + -gpu swiftshader_indirect are required on headless CI
+          # runners; without them the emulator hangs initializing a display/GPU
+          # and never reaches boot_completed.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot-save -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: ./gradlew :app:connectedDebugAndroidTest --info
 
