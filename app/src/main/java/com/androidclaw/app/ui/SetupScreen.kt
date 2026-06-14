@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -141,20 +142,40 @@ fun SetupScreen(
                 if (!authOk) {
                     // Provider picker
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = backend == LlmBackend.ANTHROPIC, onClick = { backend = LlmBackend.ANTHROPIC })
-                        Text("Anthropic", style = MaterialTheme.typography.bodyMedium)
+                        Row(
+                            Modifier.clickable { backend = LlmBackend.ANTHROPIC },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = backend == LlmBackend.ANTHROPIC, onClick = null)
+                            Text("Anthropic", style = MaterialTheme.typography.bodyMedium)
+                        }
                         Spacer(Modifier.width(12.dp))
-                        RadioButton(selected = backend == LlmBackend.OPENROUTER, onClick = { backend = LlmBackend.OPENROUTER })
-                        Text("OpenRouter", style = MaterialTheme.typography.bodyMedium)
+                        Row(
+                            Modifier.clickable { backend = LlmBackend.OPENROUTER },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = backend == LlmBackend.OPENROUTER, onClick = null)
+                            Text("OpenRouter", style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
 
                     if (backend == LlmBackend.ANTHROPIC) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = !useOAuth, onClick = { useOAuth = false })
-                            Text("API key", style = MaterialTheme.typography.bodyMedium)
+                            Row(
+                                Modifier.clickable { useOAuth = false },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = !useOAuth, onClick = null)
+                                Text("API key", style = MaterialTheme.typography.bodyMedium)
+                            }
                             Spacer(Modifier.width(8.dp))
-                            RadioButton(selected = useOAuth, onClick = { useOAuth = true })
-                            Text("Claude account", style = MaterialTheme.typography.bodyMedium)
+                            Row(
+                                Modifier.clickable { useOAuth = true },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = useOAuth, onClick = null)
+                                Text("Claude account", style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                         if (!useOAuth) {
                             OutlinedTextField(

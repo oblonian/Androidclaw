@@ -40,21 +40,12 @@ jobs:
           # and never reaches boot_completed.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot-save -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Run the suite (don't abort on a failed assertion — we still want the
-          # screenshot tour's output), then pull the captured PNGs off the device
-          # and dump each as base64 into the log so the UI can be reviewed even
-          # without artifact download access.
+          # Run tests (don't abort on failure so we still get screenshots),
+          # then pull PNGs via the helper script (single-file avoids the
+          # per-line sh -c limitation of emulator-runner's script block).
           script: |
             ./gradlew :app:connectedDebugAndroidTest --info || echo "GRADLE_TESTS_NONZERO"
-            mkdir -p screenshots
-            adb pull /sdcard/Android/data/com.androidclaw.app/files/screenshots/. screenshots/ || true
-            echo "===SCREENSHOTS_BEGIN==="
-            find screenshots -name "*.png" -type f | sort | while read -r f; do
-              echo "===IMG_NAME:$(basename "$f")"
-              base64 -w0 "$f"
-              printf "\n===IMG_END\n"
-            done
-            echo "===SCREENSHOTS_END==="
+            sh scripts/screenshot-pull.sh
 
       - name: Upload test results
         if: always()
@@ -64,5 +55,6 @@ jobs:
           path: |
             app/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/
+            app/build/outputs/connected_android_test_additional_output/
             screenshots/
           retention-days: 14
