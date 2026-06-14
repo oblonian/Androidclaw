@@ -226,32 +226,43 @@ fun ChatScreen(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (vm.needsAuth) "Sign in or set an API key first" else "Ask AndroidClaw…") },
+                    placeholder = {
+                        Text(
+                            when {
+                                vm.needsAuth -> "Sign in or set an API key first"
+                                vm.busy -> "Redirect agent…"
+                                else -> "Ask AndroidClaw…"
+                            },
+                        )
+                    },
                     enabled = !vm.needsAuth && vm.pendingStep == null,
                     maxLines = 4,
                     shape = RoundedCornerShape(16.dp),
                 )
                 Spacer(Modifier.size(8.dp))
-                if (vm.busy) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (vm.iterationCount > 0) {
-                            Text(
-                                "${vm.iterationCount} / ${settings.maxIterations}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline,
-                            )
-                        }
-                        TextButton(onClick = { vm.cancelTurn() }) { Text("Stop") }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (vm.busy && vm.iterationCount > 0) {
+                        Text(
+                            "${vm.iterationCount} / ${settings.maxIterations}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
                     }
-                } else {
-                    IconButton(
-                        onClick = {
-                            vm.send(input)
-                            input = ""
-                        },
-                        enabled = input.isNotBlank() && !vm.needsAuth,
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (vm.pendingStep == null) {
+                            IconButton(
+                                onClick = {
+                                    vm.send(input)
+                                    input = ""
+                                },
+                                enabled = input.isNotBlank() && !vm.needsAuth,
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = if (vm.busy) "Redirect" else "Send")
+                            }
+                        }
+                        if (vm.busy) {
+                            TextButton(onClick = { vm.cancelTurn() }) { Text("Stop") }
+                        }
                     }
                 }
             }

@@ -67,7 +67,7 @@ class ChatViewModel(private val container: AppContainer) : ViewModel() {
             .also { refreshAuthState() }
 
     fun send(text: String) {
-        if (text.isBlank() || busy) return
+        if (text.isBlank()) return
         if (!container.settings.isConfigured) {
             needsAuth = true
             return

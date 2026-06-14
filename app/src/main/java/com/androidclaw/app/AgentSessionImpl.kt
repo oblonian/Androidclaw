@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -66,6 +67,8 @@ class AgentSessionImpl(
     private var turnJob: Job? = null
     private var pendingDecision: CompletableDeferred<ConfirmDecision>? = null
     private var autoPoppedThisTurn = false
+    /** Channel for mid-turn user redirects; replaced each turn, null between turns. */
+    private var currentInterjectionChannel: Channel<String>? = null
 
     /** Gates each CONFIRM-tier action through whichever surface the user can see. */
     private val confirmer = Confirmer { call ->
@@ -95,7 +98,14 @@ class AgentSessionImpl(
 
     fun send(text: String, silent: Boolean) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || _state.value.busy) return
+        if (trimmed.isEmpty()) return
+        if (_state.value.busy) {
+            // Interject into the running turn — the gateway picks it up at the
+            // start of the next iteration so context is never lost.
+            if (!silent) appendEntry(SessionEntry.User(trimmed))
+            currentInterjectionChannel?.trySend(trimmed)
+            return
+        }
         val gateway = container.gateway(confirmer) ?: run {
             appendEntry(SessionEntry.Error("Open the Claw app and sign in first."))
             _events.tryEmit(OverlayReply.Failed("Claw isn't set up yet."))
@@ -104,9 +114,15 @@ class AgentSessionImpl(
         if (!silent) appendEntry(SessionEntry.User(trimmed))
         autoPoppedThisTurn = false
         _state.value = SessionState(busy = true, iteration = 0, maxIterations = container.settings.maxIterations)
+        val channel = Channel<String>(Channel.UNLIMITED)
+        currentInterjectionChannel = channel
         val history = conversation + ChatMessage.user(trimmed)
         turnJob = scope.launch {
-            gateway.runTurn(history).collect { handle(it) }
+            try {
+                gateway.runTurn(history, channel).collect { handle(it) }
+            } finally {
+                currentInterjectionChannel = null
+            }
         }
     }
 
@@ -121,6 +137,7 @@ class AgentSessionImpl(
         pendingDecision?.complete(ConfirmDecision.Cancel)
         turnJob?.cancel()
         turnJob = null
+        currentInterjectionChannel = null
         _pendingStep.value = null
         pendingDecision = null
         finishStreaming()

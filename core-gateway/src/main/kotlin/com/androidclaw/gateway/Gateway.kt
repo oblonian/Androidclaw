@@ -13,6 +13,7 @@ import com.androidclaw.tools.PermissionTier
 import com.androidclaw.tools.SCREEN_MARKER
 import com.androidclaw.tools.ToolRegistry
 import com.androidclaw.tools.ToolResult
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -30,8 +31,16 @@ class Gateway(
     private val confirmer: Confirmer = Confirmer.AutoApprove,
 ) {
 
-    /** Runs one user turn. [history] must already end with the new user message. */
-    fun runTurn(history: List<ChatMessage>): Flow<AgentEvent> = flow {
+    /**
+     * Runs one user turn. [history] must already end with the new user message.
+     * [interjections] is an optional channel the caller can offer mid-turn user
+     * messages to; they are injected at the start of the next LLM call so the
+     * model can incorporate a redirect without losing the current context.
+     */
+    fun runTurn(
+        history: List<ChatMessage>,
+        interjections: ReceiveChannel<String>? = null,
+    ): Flow<AgentEvent> = flow {
         val messages = history.toMutableList()
         val schemas = tools.schemas()
 
@@ -42,6 +51,14 @@ class Gateway(
         val hardCap = maxIterations * 3
 
         repeat(hardCap) {
+            // Inject any pending user redirects before the next LLM call.
+            if (interjections != null) {
+                var msg = interjections.tryReceive().getOrNull()
+                while (msg != null) {
+                    messages += ChatMessage.user(msg)
+                    msg = interjections.tryReceive().getOrNull()
+                }
+            }
             var stopReason = StopReason.OTHER
             val text = StringBuilder()
             val toolCalls = mutableListOf<ToolCall>()
